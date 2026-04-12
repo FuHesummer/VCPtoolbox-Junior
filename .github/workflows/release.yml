@@ -1,0 +1,121 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+  RUST_TOOLCHAIN: 'stable'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            artifact: vcp-junior-win-x64.zip
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            artifact: vcp-junior-linux-x64.tar.gz
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            artifact: vcp-junior-linux-arm64.tar.gz
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+            artifact: vcp-junior-mac-arm64.tar.gz
+          - os: macos-13
+            platform: darwin
+            arch: x64
+            artifact: vcp-junior-mac-x64.tar.gz
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build rust-vexus-lite
+        working-directory: rust-vexus-lite
+        run: npm run build
+
+      - name: Run package script
+        run: node build/package.js ${{ matrix.platform }} ${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "VCPtoolbox-Junior ${{ steps.version.outputs.tag }}"
+          body: |
+            ## VCPtoolbox-Junior ${{ steps.version.outputs.tag }}
+
+            ### 下载
+
+            | 平台 | 文件 |
+            |------|------|
+            | Windows x64 | `vcp-junior-win-x64.zip` |
+            | Linux x64 | `vcp-junior-linux-x64.tar.gz` |
+            | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` |
+            | macOS ARM64 (M系列) | `vcp-junior-mac-arm64.tar.gz` |
+            | macOS x64 (Intel) | `vcp-junior-mac-x64.tar.gz` |
+
+            ### 使用方法
+
+            1. 下载对应平台的包并解压
+            2. 编辑 `app/config.env.example` → 重命名为 `app/config.env`，填入 API 密钥
+            3. 运行：
+               - Windows: 双击 `VCPtoolbox-Junior.bat`
+               - Linux/Mac: `chmod +x vcp-junior && ./vcp-junior`
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/**/*

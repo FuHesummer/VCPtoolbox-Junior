@@ -6,6 +6,9 @@ yarn-debug.log*
 
 # AdminPanel (auto-downloaded from GitHub Releases)
 AdminPanel/
+
+# Build output
+dist/
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
