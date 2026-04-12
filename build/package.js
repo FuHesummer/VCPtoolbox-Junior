@@ -132,7 +132,9 @@ async function main() {
         const zipPath = path.join(DIST_DIR, zipName);
         // Use 7z if available (much faster than PowerShell), fallback to Compress-Archive
         try {
-            execSync(`7z a -mx=3 "${zipPath}" "${outputDir}/*"`, { stdio: 'pipe' });
+            // GitHub Actions Windows runner has 7z at C:\Program Files\7-Zip\7z.exe
+            const sevenZip = process.env['ProgramFiles'] ? `"${process.env['ProgramFiles']}\\7-Zip\\7z.exe"` : '7z';
+            execSync(`${sevenZip} a -mx=3 "${zipPath}" "${outputDir}\\*"`, { stdio: 'pipe' });
         } catch {
             execSync(`powershell -Command "Compress-Archive -Path '${outputDir}/*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'pipe' });
         }
