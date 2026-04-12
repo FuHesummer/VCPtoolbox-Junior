@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs').promises;
-const KnowledgeBaseManager = require('../KnowledgeBaseManager');
+const KnowledgeBaseManager = require('./KnowledgeBaseManager');
 const { getEmbeddingsBatch } = require('./EmbeddingUtils');
 
 /**

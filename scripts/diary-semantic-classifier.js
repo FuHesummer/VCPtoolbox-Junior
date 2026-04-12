@@ -34,12 +34,12 @@ try {
 dotenv.config({ path: path.join(__dirname, 'config.env') });
 
 // 引入 Embedding 工具
-const { getEmbeddingsBatch } = require('./modules/EmbeddingUtils');
+const { getEmbeddingsBatch } = require('../modules/EmbeddingUtils');
 
 // 配置
 const config = {
     storePath: process.env.KNOWLEDGEBASE_STORE_PATH || path.join(__dirname, 'VectorStore'),
-    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, 'dailynote'),
+    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, '..', 'knowledge'),
     dbName: 'knowledge_base.sqlite',
     dimension: parseInt(process.env.VECTORDB_DIMENSION) || 3072,
     apiKey: process.env.API_Key,

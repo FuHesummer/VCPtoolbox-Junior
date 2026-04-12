@@ -19,6 +19,7 @@ module.exports = function(options) {
             const loadedPlugins = Array.from(pluginManager.plugins.values());
             for (const p of loadedPlugins) {
                 let configEnvContent = null;
+                let hasAdminPage = false;
                 if (!p.isDistributed && p.basePath) {
                     try {
                         const pluginConfigPath = path.join(p.basePath, 'config.env');
@@ -28,6 +29,11 @@ module.exports = function(options) {
                             console.warn(`[AdminPanelRoutes] Error reading config.env for ${p.name}:`, envError);
                         }
                     }
+                    // Check for custom admin page
+                    try {
+                        await fs.access(path.join(p.basePath, 'admin', 'index.html'));
+                        hasAdminPage = true;
+                    } catch (_) {}
                 }
                 pluginDataMap.set(p.name, {
                     name: p.name,
@@ -35,7 +41,8 @@ module.exports = function(options) {
                     enabled: true,
                     configEnvContent: configEnvContent,
                     isDistributed: p.isDistributed || false,
-                    serverId: p.serverId || null
+                    serverId: p.serverId || null,
+                    hasAdminPage
                 });
             }
 
@@ -52,6 +59,7 @@ module.exports = function(options) {
 
                         if (!pluginDataMap.has(manifest.name)) {
                             let configEnvContent = null;
+                            let hasAdminPage = false;
                             try {
                                 const pluginConfigPath = path.join(pluginPath, 'config.env');
                                 configEnvContent = await fs.readFile(pluginConfigPath, 'utf-8');
@@ -60,6 +68,11 @@ module.exports = function(options) {
                                     console.warn(`[AdminPanelRoutes] Error reading config.env for disabled plugin ${manifest.name}:`, envError);
                                 }
                             }
+                            // Check for custom admin page
+                            try {
+                                await fs.access(path.join(pluginPath, 'admin', 'index.html'));
+                                hasAdminPage = true;
+                            } catch (_) {}
                             manifest.basePath = pluginPath;
                             pluginDataMap.set(manifest.name, {
                                 name: manifest.name,
@@ -67,7 +80,8 @@ module.exports = function(options) {
                                 enabled: false,
                                 configEnvContent: configEnvContent,
                                 isDistributed: false,
-                                serverId: null
+                                serverId: null,
+                                hasAdminPage
                             });
                         }
                     } catch (error) {
@@ -394,6 +408,119 @@ module.exports = function(options) {
         } catch (error) {
             console.error('[AdminAPI] Error saving or hot-reloading preprocessor order:', error);
             res.status(500).json({ status: 'error', message: 'Failed to save or hot-reload preprocessor order.' });
+        }
+    });
+
+    // --- Plugin Admin Panel (dynamic discovery) ---
+    // Serve plugin's custom admin page (Plugin/<name>/admin/index.html)
+    router.get('/plugins/:pluginName/admin-page', async (req, res) => {
+        const pluginName = req.params.pluginName;
+        const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+
+        try {
+            const pluginFolders = await fs.readdir(PLUGIN_DIR, { withFileTypes: true });
+            let targetPluginPath = null;
+
+            for (const folder of pluginFolders) {
+                if (!folder.isDirectory()) continue;
+                const potentialPath = path.join(PLUGIN_DIR, folder.name);
+                const manifestPath = path.join(potentialPath, manifestFileName);
+                const blockedPath = manifestPath + blockedManifestExtension;
+
+                let manifestContent = null;
+                try { manifestContent = await fs.readFile(manifestPath, 'utf-8'); }
+                catch (e) {
+                    if (e.code === 'ENOENT') {
+                        try { manifestContent = await fs.readFile(blockedPath, 'utf-8'); }
+                        catch (_) { continue; }
+                    } else { continue; }
+                }
+
+                try {
+                    const manifest = JSON.parse(manifestContent);
+                    if (manifest.name === pluginName) {
+                        targetPluginPath = potentialPath;
+                        break;
+                    }
+                } catch (_) { continue; }
+            }
+
+            if (!targetPluginPath) {
+                return res.status(404).json({ error: `Plugin '${pluginName}' not found.` });
+            }
+
+            // Check for admin/index.html
+            const adminPagePath = path.join(targetPluginPath, 'admin', 'index.html');
+            try {
+                await fs.access(adminPagePath);
+                const content = await fs.readFile(adminPagePath, 'utf-8');
+                res.type('html').send(content);
+            } catch (e) {
+                res.status(404).json({ error: `Plugin '${pluginName}' does not have a custom admin page.` });
+            }
+        } catch (error) {
+            console.error(`[AdminAPI] Error serving admin page for plugin ${pluginName}:`, error);
+            res.status(500).json({ error: 'Failed to load plugin admin page', details: error.message });
+        }
+    });
+
+    // Serve static assets from plugin's admin directory
+    router.get('/plugins/:pluginName/admin-assets/:filename', async (req, res) => {
+        const { pluginName, filename } = req.params;
+        const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+
+        // Security: prevent path traversal
+        if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return res.status(400).json({ error: 'Invalid filename.' });
+        }
+
+        try {
+            const pluginFolders = await fs.readdir(PLUGIN_DIR, { withFileTypes: true });
+            let targetPluginPath = null;
+
+            for (const folder of pluginFolders) {
+                if (!folder.isDirectory()) continue;
+                const potentialPath = path.join(PLUGIN_DIR, folder.name);
+                const manifestPath = path.join(potentialPath, manifestFileName);
+                const blockedPath = manifestPath + blockedManifestExtension;
+
+                let manifestContent = null;
+                try { manifestContent = await fs.readFile(manifestPath, 'utf-8'); }
+                catch (e) {
+                    if (e.code === 'ENOENT') {
+                        try { manifestContent = await fs.readFile(blockedPath, 'utf-8'); }
+                        catch (_) { continue; }
+                    } else { continue; }
+                }
+
+                try {
+                    const manifest = JSON.parse(manifestContent);
+                    if (manifest.name === pluginName) {
+                        targetPluginPath = potentialPath;
+                        break;
+                    }
+                } catch (_) { continue; }
+            }
+
+            if (!targetPluginPath) {
+                return res.status(404).json({ error: `Plugin '${pluginName}' not found.` });
+            }
+
+            const assetPath = path.join(targetPluginPath, 'admin', filename);
+            // Ensure resolved path is within the admin directory
+            const resolvedPath = path.resolve(assetPath);
+            const adminDir = path.resolve(path.join(targetPluginPath, 'admin'));
+            if (!resolvedPath.startsWith(adminDir)) {
+                return res.status(403).json({ error: 'Access denied.' });
+            }
+
+            await fs.access(assetPath);
+            res.sendFile(resolvedPath);
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                return res.status(404).json({ error: 'Asset not found.' });
+            }
+            res.status(500).json({ error: 'Failed to serve asset', details: error.message });
         }
     });
 

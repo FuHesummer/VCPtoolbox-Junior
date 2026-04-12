@@ -11,7 +11,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', 'config.env') 
 // --- Configuration ---
 const DEBUG_MODE = (process.env.DebugMode || "false").toLowerCase() === "true";
 const projectBasePath = process.env.PROJECT_BASE_PATH;
-const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'dailynote') : path.join(__dirname, '..', '..', 'dailynote'));
+const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'knowledge') : path.join(__dirname, '..', '..', 'knowledge'));
 
 // ImageServer 相关配置（由 Plugin.js 自动注入）
 const SERVER_PORT = process.env.SERVER_PORT;

@@ -9,7 +9,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', 'config.env') 
 const DEBUG_MODE = (process.env.DebugMode || "false").toLowerCase() === "true";
 const CONFIGURED_EXTENSION = (process.env.DAILY_NOTE_EXTENSION || "txt").toLowerCase() === "md" ? "md" : "txt";
 const projectBasePath = process.env.PROJECT_BASE_PATH;
-const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'dailynote') : path.join(__dirname, '..', '..', 'dailynote'));
+const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'knowledge') : path.join(__dirname, '..', '..', 'knowledge'));
 
 // Tag processing configuration
 const TAG_MODEL = process.env.TagModel || 'gemini-2.5-flash-preview-09-2025-thinking';

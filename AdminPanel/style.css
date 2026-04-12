@@ -4386,3 +4386,98 @@ input:checked + .switch-slider:before {
     border-radius: 12px;
     border: 1px dashed var(--border-color);
 }
+
+/* --- Plugin Admin Modal --- */
+.plugin-admin-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    animation: modalFadeIn 0.2s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.plugin-admin-modal-container {
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    width: 80%;
+    max-width: 900px;
+    height: 75vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+}
+
+.plugin-admin-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--tertiary-bg);
+}
+
+.plugin-admin-modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--primary-text);
+}
+
+.plugin-admin-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    color: var(--secondary-text);
+    cursor: pointer;
+    padding: 0 8px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.plugin-admin-modal-close:hover {
+    color: var(--danger-color, #ef4444);
+}
+
+.plugin-admin-modal-body {
+    flex: 1;
+    overflow: hidden;
+}
+
+.plugin-admin-modal-body iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: var(--primary-bg);
+}
+
+/* Plugin admin button */
+.plugin-admin-button {
+    background: var(--accent-bg);
+    color: var(--primary-text);
+    border: 1px solid var(--border-color);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    margin-left: 8px;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.plugin-admin-button:hover {
+    background: var(--button-bg);
+    color: #fff;
+    border-color: var(--button-bg);
+}

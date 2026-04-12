@@ -165,7 +165,7 @@ app.get('/', (req, res) => {
 // --- 本地独立处理的模块 ---
 // 这些模块仅依赖文件 I/O 和轻量单例，不需要主进程运行态
 
-const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, 'dailynote');
+const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, 'knowledge');
 
 // Agent 目录
 let AGENT_DIR;
@@ -200,10 +200,7 @@ const localModules = [
     'agents',          // Agent 映射与文件管理
     'tvs',             // TVS 变量文件管理
     'schedules',       // 日程管理
-    'newapiMonitor',   // NewAPI 监控（外部 HTTP）
-    'cache',           // 多媒体/图像缓存管理
     'dailyNotes',      // 日记知识库文件管理
-    'agentAssistant',  // Agent 助手配置（纯文件 I/O）
 ];
 
 // 日志路径获取函数（本地计算，不依赖主进程 logger 实例）

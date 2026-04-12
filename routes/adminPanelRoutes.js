@@ -58,19 +58,14 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
     mount('/', 'config');             // Handles /tool-approval-config, /config/main
     mount('/', 'plugins');            // Handles /plugins/*, /preprocessors/*
     mount('/', 'server');             // Handles /verify-login, /logout, /check-auth, /server/restart
-    mount('/', 'cache');              // Handles /multimodal-cache/*, /image-cache/*
     mount('/', 'toolbox');            // Handles /toolbox/*
     mount('/', 'agents');             // Handles /agents/*
     mount('/', 'tvs');                // Handles /tvsvars/*
     mount('/', 'placeholders');       // Handles /placeholders
     mount('/', 'schedules');          // Handles /schedules/*
     mount('/', 'rag');                // Handles /rag-tags, /rag-params, /available-clusters, etc.
-    mount('/', 'agentAssistant');     // Handles /agent-assistant/*
-    mount('/', 'taskAssistant');     // Handles /task-assistant/*
     mount('/', 'toolListEditor');     // Handles /tool-list/*
-    mount('/', 'dream');              // Handles /dream-logs/*, /dream-operation/*
     mount('/', 'dailyNotes');         // Wrapper for existing dailyNotesRoutes (Handles /dailynotes/*)
-    mount('/', 'newapiMonitor');      // Handles /newapi-monitor/*
 
     return adminApiRouter;
 };

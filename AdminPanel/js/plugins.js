@@ -150,6 +150,19 @@ function createPluginConfigSection(plugin, container) {
     });
 
     pluginControlsDiv.appendChild(toggleButton);
+
+    // Dynamic admin page button (if plugin has admin/index.html)
+    if (plugin.hasAdminPage) {
+        const adminButton = document.createElement('button');
+        adminButton.textContent = '高级设置';
+        adminButton.classList.add('plugin-admin-button');
+        adminButton.title = '打开插件自带的管理面板';
+        adminButton.addEventListener('click', () => {
+            openPluginAdminModal(plugin.manifest.name, displayName);
+        });
+        pluginControlsDiv.appendChild(adminButton);
+    }
+
     pluginSection.appendChild(pluginControlsDiv);
 
     const form = document.createElement('form');
@@ -432,3 +445,47 @@ document.addEventListener('config-field-deleted', (e) => {
         originalPluginConfigs[pluginName] = originalPluginConfigs[pluginName].filter(entry => entry.key !== key);
     }
 });
+
+/**
+ * Open a modal with the plugin's custom admin page (loaded via iframe).
+ * @param {string} pluginName - Plugin identifier
+ * @param {string} displayName - Human-readable plugin name
+ */
+function openPluginAdminModal(pluginName, displayName) {
+    // Remove existing modal if any
+    const existing = document.getElementById('plugin-admin-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'plugin-admin-modal';
+    modal.className = 'plugin-admin-modal-overlay';
+    modal.innerHTML = `
+        <div class="plugin-admin-modal-container">
+            <div class="plugin-admin-modal-header">
+                <h3>${displayName} - 高级设置</h3>
+                <button class="plugin-admin-modal-close" title="关闭">&times;</button>
+            </div>
+            <div class="plugin-admin-modal-body">
+                <iframe src="/admin_api/plugins/${pluginName}/admin-page" frameborder="0"></iframe>
+            </div>
+        </div>
+    `;
+
+    // Close on overlay click or close button
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.classList.contains('plugin-admin-modal-close')) {
+            modal.remove();
+        }
+    });
+
+    // Close on Escape key
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+
+    document.body.appendChild(modal);
+}

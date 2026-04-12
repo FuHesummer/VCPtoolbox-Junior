@@ -165,7 +165,7 @@ class ToolExecutor {
       }
     }
 
-    const dailyNoteRoot = kbManager.config?.rootPath || path.resolve(process.cwd(), 'dailynote');
+    const dailyNoteRoot = kbManager.config?.rootPath || path.resolve(process.cwd(), 'knowledge');
 
     // Step 4: 全局排序取 Top-N，转换为 file:// URL
     return Array.from(bestByFile.values())

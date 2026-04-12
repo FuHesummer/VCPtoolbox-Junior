@@ -21,8 +21,6 @@ export function initializeDashboard() {
         clearInterval(monitorIntervalId);
     }
     updateDashboardData();
-    updateWeatherData();
-    updateDailyHotNews();
     initializeCalendarWidget();
     
     updateActivityChart().then(() => {
@@ -31,8 +29,6 @@ export function initializeDashboard() {
 
     monitorIntervalId = setInterval(() => {
         updateDashboardData();
-        updateWeatherData();
-        updateDailyHotNews();
         initializeCalendarWidget();
         updateActivityChart().then(() => {
              drawActivityChart();

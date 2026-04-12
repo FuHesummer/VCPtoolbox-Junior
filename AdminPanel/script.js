@@ -5,7 +5,6 @@ import { loadPluginList, loadPluginConfig } from './js/plugins.js';
 import { initializeDashboard, stopDashboardUpdates } from './js/dashboard.js';
 import { initializeDailyNotesManager } from './js/notes-manager.js';
 import { initializeAgentManager } from './js/agent-manager.js';
-import { initializeAgentAssistantConfig } from './js/agent-assistant-config.js';
 import { initializeToolboxManager } from './js/toolbox-manager.js';
 import { initializeTvsFilesEditor } from './js/tvs-editor.js';
 import { initializeServerLogViewer, stopServerLogUpdates } from './js/log-viewer.js';
@@ -13,11 +12,8 @@ import { initializePreprocessorOrderManager } from './js/preprocessor-manager.js
 import { initializeSemanticGroupsEditor } from './js/semantic-groups-editor.js';
 import { initializeThinkingChainsEditor } from './js/thinking-chains-editor.js';
 import { initializeVCPForum } from './js/forum.js';
-import { initializeTaskAssistantConfig } from './js/task-assistant-config.js';
 import { initializeScheduleManager } from './js/schedule-manager.js';
 import { initializeRAGTuning } from './js/rag-tuning.js';
-import { initializeDreamManager } from './js/dream-manager.js';
-import { initializeAgentScores } from './js/agent-scores.js';
 import { initializePlaceholderViewer } from './js/placeholder-viewer.js';
 import { initializeToolApprovalManager } from './js/tool-approval.js';
 
@@ -127,12 +123,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     case 'agent-files-editor-section':
                         initializeAgentManager();
                         break;
-                    case 'agent-assistant-config-section':
-                        initializeAgentAssistantConfig();
-                        break;
-                    case 'agent-scores-section':
-                        initializeAgentScores();
-                        break;
                     case 'toolbox-manager-section':
                         initializeToolboxManager();
                         break;
@@ -154,17 +144,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     case 'vcp-forum-section':
                         initializeVCPForum();
                         break;
-                    case 'task-assistant-config-section':
-                        initializeTaskAssistantConfig();
-                        break;
                     case 'schedule-manager-section':
                         initializeScheduleManager();
                         break;
                     case 'rag-tuning-section':
                         initializeRAGTuning();
-                        break;
-                    case 'dream-manager-section':
-                        initializeDreamManager();
                         break;
                     case 'placeholder-viewer-section':
                         initializePlaceholderViewer();
