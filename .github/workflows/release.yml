@@ -146,6 +146,7 @@ jobs:
               require('./modules/WebSocketServer.js');
               console.log('✅ WebSocketServer loads');
               console.log('✅ All core modules loaded successfully');
+              process.exit(0);
             } catch(e) {
               console.error('❌ Module load failed:', e.message);
               process.exit(1);
