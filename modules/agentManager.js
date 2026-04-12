@@ -4,7 +4,7 @@ const fsSync = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 
-const MAP_FILE = path.join(__dirname, '..', 'agent_map.json');
+const MAP_FILE = path.join(__dirname, 'agent_map.json');
 
 class AgentManager {
     constructor(defaultAgentDir = null) {

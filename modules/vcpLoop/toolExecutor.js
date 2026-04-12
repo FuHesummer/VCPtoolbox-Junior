@@ -1,7 +1,7 @@
 // modules/vcpLoop/toolExecutor.js
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { getEmbeddingsBatch, cosineSimilarity } = require('../../EmbeddingUtils');
+const { getEmbeddingsBatch, cosineSimilarity } = require('../EmbeddingUtils');
 
 /**
  * 提取消息的纯文本字符串

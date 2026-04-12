@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const schedule = require('node-schedule');
 const dotenv = require('dotenv'); // Ensures dotenv is available
-const FileFetcherServer = require('./FileFetcherServer.js');
+const FileFetcherServer = require('./modules/FileFetcherServer.js');
 const express = require('express'); // For plugin API routing
 const chokidar = require('chokidar');
 const { getAuthCode } = require('./modules/captchaDecoder'); // 导入统一的解码函数
@@ -31,7 +31,7 @@ class PluginManager extends EventEmitter {
         this.isReloading = false;
         this.reloadTimeout = null;
         this.vectorDBManager = null; // 修复：不再自己创建，等待注入
-        this.toolApprovalManager = new ToolApprovalManager(path.join(__dirname, 'toolApprovalConfig.json'));
+        this.toolApprovalManager = new ToolApprovalManager(path.join(__dirname, 'modules', 'toolApprovalConfig.json'));
         this.pendingApprovals = new Map(); // requestId -> { resolve, reject, timeoutId }
     }
 

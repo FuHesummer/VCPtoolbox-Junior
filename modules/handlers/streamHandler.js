@@ -1,6 +1,6 @@
 // modules/handlers/streamHandler.js
 const { StringDecoder } = require('string_decoder');
-const vcpInfoHandler = require('../../vcpInfoHandler.js');
+const vcpInfoHandler = require('../vcpInfoHandler.js');
 const roleDivider = require('../roleDivider.js');
 
 class StreamHandler {

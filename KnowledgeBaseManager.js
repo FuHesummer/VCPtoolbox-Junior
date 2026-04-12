@@ -7,11 +7,11 @@ const path = require('path');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const chokidar = require('chokidar');
-const { chunkText } = require('./TextChunker');
-const { getEmbeddingsBatch } = require('./EmbeddingUtils');
-const EPAModule = require('./EPAModule');
-const ResidualPyramid = require('./ResidualPyramid');
-const ResultDeduplicator = require('./ResultDeduplicator'); // ✅ Tagmemo v4 requirement
+const { chunkText } = require('./modules/TextChunker');
+const { getEmbeddingsBatch } = require('./modules/EmbeddingUtils');
+const EPAModule = require('./modules/EPAModule');
+const ResidualPyramid = require('./modules/ResidualPyramid');
+const ResultDeduplicator = require('./modules/ResultDeduplicator'); // ✅ Tagmemo v4 requirement
 
 // 尝试加载 Rust Vexus 引擎
 let VexusIndex = null;
@@ -154,7 +154,7 @@ class KnowledgeBaseManager {
      * ✅ 新增：加载 RAG 热调控参数
      */
     async loadRagParams() {
-        const paramsPath = path.join(__dirname, 'rag_params.json');
+        const paramsPath = path.join(__dirname, 'modules', 'rag_params.json');
         try {
             const data = await fs.readFile(paramsPath, 'utf-8');
             this.ragParams = JSON.parse(data);
@@ -169,7 +169,7 @@ class KnowledgeBaseManager {
      * ✅ 新增：启动参数监听器
      */
     _startRagParamsWatcher() {
-        const paramsPath = path.join(__dirname, 'rag_params.json');
+        const paramsPath = path.join(__dirname, 'modules', 'rag_params.json');
         if (this.ragParamsWatcher) return;
 
         this.ragParamsWatcher = chokidar.watch(paramsPath);

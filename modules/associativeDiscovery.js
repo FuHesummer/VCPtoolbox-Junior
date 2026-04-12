@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const KnowledgeBaseManager = require('../KnowledgeBaseManager');
-const { getEmbeddingsBatch } = require('../EmbeddingUtils');
+const { getEmbeddingsBatch } = require('./EmbeddingUtils');
 
 /**
  * 联想发现公共模块

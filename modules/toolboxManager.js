@@ -3,7 +3,7 @@ const fsSync = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 
-const MAP_FILE = path.join(__dirname, '..', 'toolbox_map.json');
+const MAP_FILE = path.join(__dirname, 'toolbox_map.json');
 
 function resolveTvsDir() {
   const configPath = process.env.TVSTXT_DIR_PATH;

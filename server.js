@@ -112,8 +112,8 @@ const knowledgeBaseManager = require('./KnowledgeBaseManager.js'); // 新增：�
 const pluginManager = require('./Plugin.js');
 const taskScheduler = require('./routes/taskScheduler.js');
 const webSocketServer = require('./WebSocketServer.js'); // 新增 WebSocketServer 引入
-const FileFetcherServer = require('./FileFetcherServer.js'); // 引入新的 FileFetcherServer 模块
-const vcpInfoHandler = require('./vcpInfoHandler.js'); // 引入新的 VCP 信息处理器
+const FileFetcherServer = require('./modules/FileFetcherServer.js'); // 引入新的 FileFetcherServer 模块
+const vcpInfoHandler = require('./modules/vcpInfoHandler.js'); // 引入新的 VCP 信息处理器
 const basicAuth = require('basic-auth');
 const cors = require('cors'); // 引入 cors 模块
 
@@ -182,7 +182,7 @@ try {
 const CHINA_MODEL_1_COT = (process.env.ChinaModel1Cot || "false").toLowerCase() === "true";
 
 // 新增：模型重定向功能
-const ModelRedirectHandler = require('./modelRedirectHandler.js');
+const ModelRedirectHandler = require('./modules/modelRedirectHandler.js');
 const modelRedirectHandler = new ModelRedirectHandler();
 
 // ensureDebugLogDir is now ensureDebugLogDirSync and called by initializeServerLogger
@@ -1263,7 +1263,7 @@ async function startServer() {
     // 新增：加载模型重定向配置
     console.log('正在加载模型重定向配置...');
     modelRedirectHandler.setDebugMode(DEBUG_MODE);
-    await modelRedirectHandler.loadModelRedirectConfig(path.join(__dirname, 'ModelRedirect.json'));
+    await modelRedirectHandler.loadModelRedirectConfig(path.join(__dirname, 'modules', 'ModelRedirect.json'));
     console.log('模型重定向配置加载完成。');
 
     // 新增：初始化Agent管理器

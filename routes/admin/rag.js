@@ -26,7 +26,7 @@ module.exports = function(options) {
     });
 
     router.get('/rag-params', async (req, res) => {
-        const ragParamsPath = path.join(__dirname, '..', '..', 'rag_params.json');
+        const ragParamsPath = path.join(__dirname, '..', '..', 'modules', 'rag_params.json');
         try {
             const content = await fs.readFile(ragParamsPath, 'utf-8');
             res.json(JSON.parse(content));
@@ -34,7 +34,7 @@ module.exports = function(options) {
     });
 
     router.post('/rag-params', async (req, res) => {
-        const ragParamsPath = path.join(__dirname, '..', '..', 'rag_params.json');
+        const ragParamsPath = path.join(__dirname, '..', '..', 'modules', 'rag_params.json');
         try {
             await fs.writeFile(ragParamsPath, JSON.stringify(req.body, null, 2), 'utf-8');
             res.json({ message: 'Saved' });

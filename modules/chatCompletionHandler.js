@@ -1,6 +1,6 @@
 // modules/chatCompletionHandler.js
 const messageProcessor = require('./messageProcessor.js');
-const vcpInfoHandler = require('../vcpInfoHandler.js');
+const vcpInfoHandler = require('./vcpInfoHandler.js');
 const contextManager = require('./contextManager.js');
 const roleDivider = require('./roleDivider.js');
 const fs = require('fs').promises;

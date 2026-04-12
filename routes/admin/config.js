@@ -8,7 +8,7 @@ module.exports = function(options) {
 
     // --- Tool Approval Config API ---
     router.get('/tool-approval-config', async (req, res) => {
-        const configPath = path.join(__dirname, '..', '..', 'toolApprovalConfig.json');
+        const configPath = path.join(__dirname, '..', '..', 'modules', 'toolApprovalConfig.json');
         try {
             const content = await fs.readFile(configPath, 'utf-8');
             res.json(JSON.parse(content));
@@ -27,7 +27,7 @@ module.exports = function(options) {
         if (typeof config !== 'object' || config === null) {
             return res.status(400).json({ error: 'Invalid configuration data. Object expected.' });
         }
-        const configPath = path.join(__dirname, '..', '..', 'toolApprovalConfig.json');
+        const configPath = path.join(__dirname, '..', '..', 'modules', 'toolApprovalConfig.json');
         try {
             await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
             res.json({ success: true, message: '工具调用审核配置已成功保存。' });

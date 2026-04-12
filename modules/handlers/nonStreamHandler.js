@@ -1,5 +1,5 @@
 // modules/handlers/nonStreamHandler.js
-const vcpInfoHandler = require('../../vcpInfoHandler.js');
+const vcpInfoHandler = require('../vcpInfoHandler.js');
 const roleDivider = require('../roleDivider.js');
 
 class NonStreamHandler {
