@@ -6,12 +6,15 @@ const path = require('path');
  * Admin Panel API Routes
  * This file has been modularized. individual route handlers are located in ./admin/*.js
  */
-module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurrentServerLogPath, vectorDBManager, agentDirPath, cachedEmojiLists, tvsDirPath) {
+module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurrentServerLogPath, vectorDBManager, agentDirPath, cachedEmojiLists, tvsDirPath, triggerRestart) {
     if (!agentDirPath || typeof agentDirPath !== 'string') {
         throw new Error('[AdminPanelRoutes] agentDirPath must be a non-empty string');
     }
     if (!tvsDirPath || typeof tvsDirPath !== 'string') {
         throw new Error('[AdminPanelRoutes] tvsDirPath must be a non-empty string');
+    }
+    if (typeof triggerRestart !== 'function') {
+        console.warn('[AdminPanelRoutes] triggerRestart callback not provided or not a function. Restarts will fall back to process.exit(1).');
     }
 
     const adminApiRouter = express.Router();
@@ -25,7 +28,8 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
         vectorDBManager,
         agentDirPath,
         cachedEmojiLists,
-        tvsDirPath
+        tvsDirPath,
+        triggerRestart
     };
 
     /**
@@ -62,9 +66,11 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
     mount('/', 'schedules');          // Handles /schedules/*
     mount('/', 'rag');                // Handles /rag-tags, /rag-params, /available-clusters, etc.
     mount('/', 'agentAssistant');     // Handles /agent-assistant/*
+    mount('/', 'taskAssistant');     // Handles /task-assistant/*
     mount('/', 'toolListEditor');     // Handles /tool-list/*
     mount('/', 'dream');              // Handles /dream-logs/*, /dream-operation/*
     mount('/', 'dailyNotes');         // Wrapper for existing dailyNotesRoutes (Handles /dailynotes/*)
+    mount('/', 'newapiMonitor');      // Handles /newapi-monitor/*
 
     return adminApiRouter;
 };

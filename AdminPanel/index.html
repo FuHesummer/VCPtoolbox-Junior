@@ -436,6 +436,8 @@
                                 class="material-symbols-outlined">description</span>日记知识库管理</a></li>
                     <li><a href="#" data-target="vcp-forum"><span
                                 class="material-symbols-outlined">forum</span>VCP论坛</a></li>
+                    <li><a href="#" data-target="task-assistant-config"><span
+                                class="material-symbols-outlined">explore</span>任务小助手</a></li>
                     <li><a href="#" data-target="image-cache-editor"><span
                                 class="material-symbols-outlined">photo_library</span>多媒体Base64编辑器</a></li>
                     <li><a href="#" data-target="semantic-groups-editor"><span
@@ -443,11 +445,11 @@
                     <li><a href="#" data-target="vcptavern-editor"><span
                                 class="material-symbols-outlined">casino</span>VCPTavern预设编辑</a></li>
                     <li><a href="#" data-target="agent-files-editor"><span
-                                class="material-symbols-outlined">smart_toy</span>Agent管理器</a></li>
+                                class="material-symbols-outlined">smart_toy</span>Agent管理与注册</a></li>
                     <li><a href="#" data-target="toolbox-manager"><span
                                 class="material-symbols-outlined">inventory_2</span>Toolbox管理器</a></li>
                     <li><a href="#" data-target="agent-assistant-config"><span
-                                class="material-symbols-outlined">diversity_3</span>Agent助手配置</a></li>
+                                class="material-symbols-outlined">diversity_3</span>Agent通讯配置</a></li>
                     <li><a href="#" data-target="agent-scores"><span
                                 class="material-symbols-outlined">leaderboard</span>Agent积分排行榜</a></li>
                     <li><a href="#" data-target="tvs-files-editor"><span
@@ -711,7 +713,9 @@
 
             <section id="toolbox-manager-section" class="config-section">
                 <h2>Toolbox 管理器</h2>
-                <p class="description">维护 toolbox_map.json（alias→file+description），并编辑 TVStxt 下映射文件内容。</p>
+                <p class="description">支持两种折叠模式： <code>[===vcp_fold:0.55===]</code> 按 toolbox 总描述判定的累计展开模式；
+                    <code>[===vcp_fold:0.55::desc:描述===]</code> 按块 description 单独判定的精确展开模式。
+                </p>
                 <div class="agent-manager-container">
                     <div class="agent-map-editor">
                         <h3>Toolbox 映射表</h3>
@@ -733,7 +737,7 @@
                             <span id="toolbox-file-status" class="status-message"></span>
                         </div>
                         <textarea id="toolbox-file-content-editor" spellcheck="false"
-                            placeholder="从左侧选择一个 Toolbox 以编辑其关联文件..."></textarea>
+                            placeholder="从左侧选择一个 Toolbox 以编辑其关联文件...&#10;&#10;可使用新语法：[===vcp_fold:0.55::desc:你的描述===]"></textarea>
                     </div>
                 </div>
             </section>
@@ -778,6 +782,55 @@
                                 placeholder="例如：统一要求所有助手说话更温柔、避免输出敏感内容、统一使用某种语言等。"></textarea>
                             <p class="aa-hint">
                                 这里的内容会自动追加到每个助手的系统提示词后面，可用于统一规定整体风格和安全边界。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="aa-delegation-settings">
+                        <h3>异步委托模式配置</h3>
+                        <p class="aa-hint" style="margin-bottom: 12px;">
+                            委托模式允许将长时间运行的任务交给 Agent 在后台自主执行。以下参数控制委托的执行边界。
+                        </p>
+                        <div class="aa-global-grid">
+                            <div class="aa-global-item">
+                                <label for="aa-delegation-max-rounds">
+                                    最大循环轮数
+                                </label>
+                                <input type="number" id="aa-delegation-max-rounds" min="1" max="100" step="1"
+                                    placeholder="例如：15">
+                                <p class="aa-hint">
+                                    委托任务的最大对话轮数，防止死循环。
+                                </p>
+                            </div>
+                            <div class="aa-global-item">
+                                <label for="aa-delegation-timeout">
+                                    最长执行时间（秒）
+                                </label>
+                                <input type="number" id="aa-delegation-timeout" min="30" max="3600" step="1"
+                                    placeholder="例如：300">
+                                <p class="aa-hint">
+                                    委托任务超过此时间后将自动终止。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="aa-global-item-full">
+                            <label for="aa-delegation-system-prompt">
+                                委托任务系统提示词（可选）
+                            </label>
+                            <textarea id="aa-delegation-system-prompt" rows="4"
+                                placeholder="自定义委托模式下注入给 Agent 的系统提示词。可用变量：{{SenderName}}、{{TaskPrompt}}"></textarea>
+                            <p class="aa-hint">
+                                留空则使用内置默认提示词。支持 <code>{{SenderName}}</code> 和 <code>{{TaskPrompt}}</code> 占位符。
+                            </p>
+                        </div>
+                        <div class="aa-global-item-full">
+                            <label for="aa-delegation-heartbeat-prompt">
+                                委托心跳提示词（可选）
+                            </label>
+                            <textarea id="aa-delegation-heartbeat-prompt" rows="2"
+                                placeholder="委托任务进行中，每轮追加给 Agent 的催促提示词。"></textarea>
+                            <p class="aa-hint">
+                                留空则使用内置默认提示词。每个心跳轮次会自动附加此提示以推动任务继续执行。
                             </p>
                         </div>
                     </div>
@@ -833,9 +886,11 @@
                             <p class="aa-hint">超时后，该审核请求将自动拒绝。</p>
                         </div>
                         <div class="config-item">
-                            <label for="tool-approval-list">被审核工具名单 (每行一个工具名称)</label>
-                            <textarea id="tool-approval-list" rows="8" placeholder="例如：\nSciCalculator\nPowerShellExecutor"></textarea>
-                            <p class="aa-hint">当“开启所有工具调用审核”关闭时，仅对此名单中的工具进行审核。</p>
+                            <label for="tool-approval-list">被审核工具名单 (每行一条规则)</label>
+                            <textarea id="tool-approval-list" rows="8"
+                                placeholder="例如：\nSciCalculator\nPowerShellExecutor:Get-ChildItem\nChromeBridge:open_url"></textarea>
+                            <p class="aa-hint">支持两种精确匹配规则：仅写工具名表示该工具所有调用都审核；写成 ToolName:Command 表示仅审核指定 command。若存在
+                                command1、command2...，任一命中即进入审核。</p>
                         </div>
                         <div class="config-footer">
                             <button type="submit" class="btn-primary">保存审核配置</button>
@@ -869,7 +924,8 @@
                             <tbody id="agent-scores-body">
                                 <!-- Data will be loaded here -->
                                 <tr>
-                                    <td colspan="5" style="text-align: center; padding: 40px; opacity: 0.6;">正在加载积分数据...</td>
+                                    <td colspan="5" style="text-align: center; padding: 40px; opacity: 0.6;">正在加载积分数据...
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -948,7 +1004,8 @@
                         <span id="server-log-status" class="status-message info">就绪</span>
                         <div class="log-limit-controls" style="display: flex; align-items: center; gap: 8px;">
                             <label for="server-log-limit" style="font-size: 0.9em; opacity: 0.8;">行数限制:</label>
-                            <input type="number" id="server-log-limit" min="100" max="100000" value="5000" style="width: 80px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--primary-text); font-size: 0.9em;">
+                            <input type="number" id="server-log-limit" min="100" max="100000" value="5000"
+                                style="width: 80px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--primary-text); font-size: 0.9em;">
                         </div>
                         <button id="reverse-server-log-button" class="btn-secondary">🔃 倒序显示</button>
                         <button id="copy-server-log-button" class="btn-secondary">📋 复制</button>
@@ -997,6 +1054,63 @@
                 </div>
                 <div id="forum-posts-container" class="forum-posts-container">
                     <!-- Forum posts will be loaded here -->
+                </div>
+            </section>
+
+            <!-- Section: Forum Assistant Config -->
+            <section id="task-assistant-config-section" class="config-section">
+                <h2>任务派发中心</h2>
+                <p class="section-description">统一管理论坛巡航任务、通用提示词任务与一次性任务。提示词模板可直接编辑，论坛类任务保留
+                    <code>{{forum_post_list}}</code> 占位符预读取能力。
+                </p>
+
+                <div class="fa-dashboard-container">
+                    <div id="fa-runtime-status" class="fa-runtime-status">
+                        加载中...
+                    </div>
+
+                    <div class="fa-global-controls card">
+                        <div class="aa-field-group">
+                            <label class="switch-container" style="font-size:1.05em;font-weight:bold;">
+                                <span>全局任务调度开关</span>
+                                <input type="checkbox" id="fa-global-enabled">
+                                <span class="switch-slider"></span>
+                            </label>
+                            <p class="aa-hint">开启后，系统将根据各任务的调度配置自动执行任务。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fa-quick-add-bar card">
+                    <div class="fa-quick-add-grid">
+                        <div class="aa-field-group">
+                            <label for="fa-new-task-name">新任务名称</label>
+                            <input type="text" id="fa-new-task-name" placeholder="例如：论坛巡航-可可">
+                        </div>
+                        <div class="aa-field-group">
+                            <label for="fa-new-task-type">任务类型</label>
+                            <select id="fa-new-task-type"></select>
+                        </div>
+                        <div class="fa-quick-actions">
+                            <button type="button" id="fa-add-task-button" class="btn-primary">
+                                <span class="material-symbols-outlined">add</span> 添加任务
+                            </button>
+                            <button type="button" id="fa-refresh-button" class="btn-secondary">
+                                <span class="material-symbols-outlined">refresh</span> 刷新状态
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="fa-task-cards-container" class="aa-agent-cards-container"></div>
+
+                <datalist id="fa-available-agents-list"></datalist>
+
+                <div class="form-actions fa-footer-actions">
+                    <button type="button" id="fa-save-config-button" class="btn-primary">
+                        <span class="material-symbols-outlined">save</span> 保存所有任务配置
+                    </button>
+                    <span id="fa-status" class="status-message"></span>
                 </div>
             </section>
 

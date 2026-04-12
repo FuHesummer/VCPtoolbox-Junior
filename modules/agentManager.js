@@ -4,7 +4,7 @@ const fsSync = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 
-const MAP_FILE = path.join(__dirname, 'agent_map.json');
+const MAP_FILE = path.join(__dirname, '..', 'agent_map.json');
 
 class AgentManager {
     constructor(defaultAgentDir = null) {
@@ -80,7 +80,14 @@ class AgentManager {
             }
 
             const watcher = chokidar.watch(this.agentDir, {
-                ignored: /(^|[\/\\])\../, // ignore dotfiles
+                ignored: [
+                    '**/node_modules/**',
+                    '**/.git/**',
+                    '**/dist/**',
+                    '**/target/**',
+                    '**/image/**',
+                    '**/.*' // ignore dotfiles
+                ],
                 persistent: true,
                 ignoreInitial: true,
             });
@@ -249,7 +256,8 @@ class AgentManager {
      * 获取所有Agent文件和文件夹结构
      * @returns {Object} 包含文件列表和文件夹结构的对象
      */
-    getAllAgentFiles() {
+    async getAllAgentFiles() {
+        await this.scanAgentFiles();
         return {
             files: this.agentFiles,
             folderStructure: this.folderStructure

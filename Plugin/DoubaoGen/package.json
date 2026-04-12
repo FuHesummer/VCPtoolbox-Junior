@@ -1,0 +1,22 @@
+{
+  "name": "doubao-image-gen",
+  "version": "2.0.0",
+  "description": "A VCP plugin for image generation via VolcEngine API, supporting text-to-image, image-to-image, multi-image composition, sequential generation, and dynamic model discovery.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/B3000Kcn/Doubao-Seedream3-mcp-server.git"
+  },
+  "keywords": [
+    "vcp",
+    "doubao",
+    "seedream",
+    "images",
+    "ai",
+    "volcengine"
+  ],
+  "author": "B3000Kcn",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

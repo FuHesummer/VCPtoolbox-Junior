@@ -1,0 +1,215 @@
+{
+  "manifestVersion": "1.0.0",
+  "name": "PaperReader",
+  "version": "0.6.0",
+  "displayName": "超文本递归阅读器",
+  "description": "Rust stdio closeout build of PaperReader. Supports legacy VCP commands (`IngestPDF`, `Read`, `ReadSkeleton`, `ReadDeep`, `Query`) and the canonical runtime contract for document ingest/read, evidence tracing, collection synthesis, workspace state, artifact inspection, and research graph orchestration.",
+  "author": "VCP",
+  "pluginType": "synchronous",
+  "entryPoint": {
+    "type": "executable",
+    "command": "bin\\paperreader-cli.exe"
+  },
+  "communication": {
+    "protocol": "stdio",
+    "timeout": 1800000
+  },
+  "configSchema": {
+    "MINERU_API_TOKEN": {
+      "type": "string",
+      "description": "MinerU 云端 API Token（从 mineru.net 获取）。不填则自动降级到 pdf-parse。"
+    },
+    "MINERU_API_TIMEOUT": {
+      "type": "integer",
+      "description": "MinerU 轮询超时（ms），默认 300000（5 分钟）。"
+    },
+    "MINERU_POLL_INTERVAL": {
+      "type": "integer",
+      "description": "MinerU 轮询间隔（ms），默认 5000。"
+    },
+    "PaperReaderChunkSize": {
+      "type": "integer",
+      "description": "目标 chunk 大小（tokens），默认 2000。"
+    },
+    "PaperReaderOverlap": {
+      "type": "number",
+      "description": "chunk 重叠比例，默认 0.15。"
+    },
+    "PaperReaderModel": {
+      "type": "string",
+      "description": "用于阅读/总结的模型名称。"
+    },
+    "PaperReaderMaxOutputTokens": {
+      "type": "integer",
+      "description": "单次模型输出上限，默认 12000。"
+    },
+    "PaperReaderBatchSize": {
+      "type": "integer",
+      "description": "Deep 阅读分批处理的 chunk 数，默认 5。"
+    },
+    "PaperReaderMaxConcurrentLLM": {
+      "type": "integer",
+      "description": "进程级 LLM 最大并发请求数（semaphore），默认 5。"
+    },
+    "PaperReaderMaxConcurrentNodes": {
+      "type": "integer",
+      "description": "研究图节点级最大并发数（DAG 调度并发节点数量上限），默认 3。"
+    },
+    "PaperReaderMaxChunks": {
+      "type": "integer",
+      "description": "单次阅读最多处理的 chunk 数（防止成本失控），默认 120。"
+    },
+    "PaperReaderMaxAuditChunks": {
+      "type": "integer",
+      "description": "审核抽样最大 chunk 数，默认 8。"
+    },
+    "PaperReaderRecursiveGroupSize": {
+      "type": "integer",
+      "description": "递归全局地图（Global Map）的分组大小（leaf->group reduce），默认 8。"
+    },
+    "PaperReaderRecursiveMaxLevels": {
+      "type": "integer",
+      "description": "递归全局地图最多 reduce 层级，默认 6。"
+    },
+    "PaperReaderRecursiveCritic": {
+      "type": "boolean",
+      "description": "是否启用递归地图的 critic 代理（更严格但更贵），默认 false。"
+    },
+    "PaperReaderRollingContextMaxEntries": {
+      "type": "integer",
+      "description": "滚动上下文最多保留的 segment summary 条数，默认 40。"
+    },
+    "PaperReaderRollingContextMaxChars": {
+      "type": "integer",
+      "description": "滚动上下文最大字符数（超出则从尾部截断），默认 12000。"
+    }
+  },
+  "capabilities": {
+    "invocationCommands": [
+      {
+        "commandIdentifier": "IngestPDF",
+        "description": "Legacy VCP alias for `ingest_source`. Required fields: `filePath`. Optional fields: `paperId`. Produces normalized workspace artifacts and returns a reusable `document_id`."
+      },
+      {
+        "commandIdentifier": "Read",
+        "description": "Legacy VCP alias for `read_document(mode=auto)`. Required fields: `paperId`. Optional: `goal`, `forceReread`. Recommended default reading entrypoint."
+      },
+      {
+        "commandIdentifier": "ReadSkeleton",
+        "description": "Legacy VCP alias for `read_document(mode=survey_only)`. Required fields: `paperId`. Optional: `focus`."
+      },
+      {
+        "commandIdentifier": "ReadDeep",
+        "description": "Legacy VCP alias for `read_document(mode=deep_focus)`. Required fields: `paperId`. Optional: `goal`."
+      },
+      {
+        "commandIdentifier": "Query",
+        "description": "Legacy VCP alias for `retrieve_evidence`. Required fields: `paperId`, `question`."
+      },
+      {
+        "commandIdentifier": "bootstrap_workspace",
+        "description": "Create or validate the Rust workspace and return the health snapshot artifact reference."
+      },
+      {
+        "commandIdentifier": "describe_runtime",
+        "description": "Return supported commands, capabilities, and the latest health snapshot artifact reference."
+      },
+      {
+        "commandIdentifier": "get_health_snapshot",
+        "description": "Return the current runtime health snapshot."
+      },
+      {
+        "commandIdentifier": "ingest_source",
+        "description": "Canonical single-source ingestion entrypoint. Required fields: one of `source_uri`, `source_path`, or `source_text`. Optional: `source_type`, `document_name`, `document_id`."
+      },
+      {
+        "commandIdentifier": "ingest_collection",
+        "description": "Create a collection from multiple sources and persist collection manifests/maps. Provide either `sources` or `document_ids` plus `collection_id`."
+      },
+      {
+        "commandIdentifier": "refresh_ingestion",
+        "description": "Re-run ingestion for an existing document using its persisted source manifest. Required field: `document_id`."
+      },
+      {
+        "commandIdentifier": "read_document",
+        "description": "Canonical document-reading entrypoint. Required fields: `document_id`. Optional: `goal`, `mode` (`auto|survey_only|deep_focus|recursive`), `resume_from_state`, `constraints`."
+      },
+      {
+        "commandIdentifier": "resume_read",
+        "description": "Resume or continue a document read from persisted reading state. Required field: `document_id`."
+      },
+      {
+        "commandIdentifier": "audit_document",
+        "description": "Generate an audit report for a previously read document. Required field: `document_id`."
+      },
+      {
+        "commandIdentifier": "trace_claim_in_document",
+        "description": "Trace a claim against a document and persist claim/evidence artifacts. Required fields: `document_id`, `claim_text`."
+      },
+      {
+        "commandIdentifier": "survey_collection",
+        "description": "Persist collection manifest/member/map artifacts. Required fields: `collection_id`, `document_ids`."
+      },
+      {
+        "commandIdentifier": "synthesize_collection",
+        "description": "Canonical collection entrypoint. Required fields: `collection_id`. Optional: `document_ids`, `mode` (`synthesis|compare|conflict_audit`), `document_roles`, `constraints`."
+      },
+      {
+        "commandIdentifier": "compare_documents",
+        "description": "Build a collection comparison table. Required fields: `collection_id`, `document_ids` (at least two members)."
+      },
+      {
+        "commandIdentifier": "audit_collection_conflicts",
+        "description": "Audit aligned claims and conflicts across a collection. Required fields: `collection_id`, `document_ids`."
+      },
+      {
+        "commandIdentifier": "retrieve_evidence",
+        "description": "Retrieve ranked evidence for one document or a collection. Required fields: `document_id` or `collection_id`, plus `query_text`."
+      },
+      {
+        "commandIdentifier": "build_evidence_pack",
+        "description": "Build a persisted evidence pack for one document or a collection. Required fields: `document_id` or `collection_id`, plus `query_text`."
+      },
+      {
+        "commandIdentifier": "plan_research",
+        "description": "Create a research graph for a document or collection scope and persist run metadata."
+      },
+      {
+        "commandIdentifier": "run_research_graph",
+        "description": "Execute a research run. `execution.mode=async` returns `accepted` and continues in a detached worker process."
+      },
+      {
+        "commandIdentifier": "resume_research_graph",
+        "description": "Resume a persisted run from its latest checkpoint or execute the pending run if no checkpoint exists."
+      },
+      {
+        "commandIdentifier": "stream_run_events",
+        "description": "Read persisted run events with cursor-based polling semantics."
+      },
+      {
+        "commandIdentifier": "get_run_state",
+        "description": "Run-state polling seam for async research. Required field: `run_id`. Currently aliases `get_workspace_state(run_id=...)`."
+      },
+      {
+        "commandIdentifier": "cancel_run",
+        "description": "Abort an accepted/running run and persist lifecycle trace artifacts. Required field: `run_id`."
+      },
+      {
+        "commandIdentifier": "get_workspace_state",
+        "description": "Return workspace, run, graph, and budget state with normalized artifact refs."
+      },
+      {
+        "commandIdentifier": "list_artifacts",
+        "description": "List discoverable artifacts for the workspace, a run, a document, or a collection."
+      },
+      {
+        "commandIdentifier": "get_artifact",
+        "description": "Load one artifact by normalized or legacy ref. Required field: `artifact_path`."
+      },
+      {
+        "commandIdentifier": "reset_run",
+        "description": "Clear run-scoped volatile outputs and restart the persisted run state. Required field: `run_id`."
+      }
+    ]
+  }
+}
