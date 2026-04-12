@@ -65,6 +65,7 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
     mount('/', 'schedules');          // Handles /schedules/*
     mount('/', 'rag');                // Handles /rag-tags, /rag-params, /available-clusters, etc.
     mount('/', 'toolListEditor');     // Handles /tool-list/*
+    mount('/', 'pluginStore');        // Handles /plugin-store/*
     mount('/', 'dailyNotes');         // Wrapper for existing dailyNotesRoutes (Handles /dailynotes/*)
 
     return adminApiRouter;
