@@ -198,23 +198,26 @@ async function install(pluginName, options = {}) {
         }
     }
 
-    // Restore protected config.env
-    if (isUpdate && existingConfig) {
+    // Auto-merge config: preserve user values, add new keys, handle renames
+    let configChanges = [];
+    if (isUpdate && existingConfig && newExampleConfig) {
+        const merged = mergeConfig(existingConfig, newExampleConfig);
+        await fs.writeFile(configPath, merged.content, 'utf-8');
+        configChanges = merged.changes;
+    } else if (isUpdate && existingConfig) {
+        // No new example, just restore user config
         await fs.writeFile(configPath, existingConfig, 'utf-8');
     }
 
-    // Detect config changes (new/renamed keys)
-    let configChanges = null;
-    if (isUpdate && existingConfig && newExampleConfig) {
-        configChanges = detectConfigChanges(existingConfig, newExampleConfig);
-    }
-
     let message = isUpdate
-        ? `Plugin '${pluginName}' updated successfully (${downloaded} files, config.env preserved).`
-        : `Plugin '${pluginName}' installed successfully (${downloaded} files).`;
+        ? `Plugin '${pluginName}' updated (${downloaded} files).`
+        : `Plugin '${pluginName}' installed (${downloaded} files).`;
 
-    if (configChanges && configChanges.length > 0) {
-        message += ` ⚠️ ${configChanges.length} new config key(s) detected.`;
+    if (configChanges.length > 0) {
+        const added = configChanges.filter(c => c.type === 'added').length;
+        const renamed = configChanges.filter(c => c.type === 'renamed').length;
+        if (added) message += ` +${added} new config(s) added.`;
+        if (renamed) message += ` ${renamed} config(s) auto-renamed.`;
     }
 
     return { success: true, message, configChanges };
@@ -235,43 +238,150 @@ function isProtectedFile(relativePath) {
 }
 
 /**
- * Compare user's config.env with new config.env.example to detect changes
- * @returns {Array} List of { key, type: 'new'|'removed', description }
+ * Merge user config with new example config:
+ * - Preserve all user values
+ * - Append new keys from example (with default values)
+ * - Auto-rename keys (detect by similarity: same prefix or same value)
+ *
+ * @returns {{ content: string, changes: Array }}
  */
-function detectConfigChanges(userConfig, exampleConfig) {
-    const userKeys = parseEnvKeys(userConfig);
-    const exampleKeys = parseEnvKeys(exampleConfig);
+function mergeConfig(userConfig, exampleConfig) {
     const changes = [];
+    const userEntries = parseEnvEntries(userConfig);
+    const exampleEntries = parseEnvEntries(exampleConfig);
 
-    // Keys in example but not in user's config = new keys to add
-    for (const key of exampleKeys) {
-        if (!userKeys.has(key)) {
-            changes.push({ key, type: 'new', description: `New config key '${key}' available in this version` });
+    const userKeys = new Map(userEntries.filter(e => e.key).map(e => [e.key, e]));
+    const exampleKeys = new Map(exampleEntries.filter(e => e.key).map(e => [e.key, e]));
+
+    // Detect renames: keys in user but not in example, paired with keys in example but not in user
+    const removedKeys = [...userKeys.keys()].filter(k => !exampleKeys.has(k));
+    const addedKeys = [...exampleKeys.keys()].filter(k => !userKeys.has(k));
+
+    const renameMap = new Map(); // oldKey -> newKey
+    for (const oldKey of removedKeys) {
+        const bestMatch = findRenameCandidate(oldKey, addedKeys, userKeys.get(oldKey).value, exampleKeys);
+        if (bestMatch) {
+            renameMap.set(oldKey, bestMatch);
+            changes.push({
+                type: 'renamed',
+                oldKey,
+                newKey: bestMatch,
+                description: `'${oldKey}' → '${bestMatch}' (auto-renamed)`
+            });
         }
     }
 
-    // Keys in user's config but not in example = potentially removed/renamed
-    for (const key of userKeys) {
-        if (!exampleKeys.has(key)) {
-            changes.push({ key, type: 'removed', description: `Config key '${key}' no longer in example (may be renamed)` });
+    // Build merged content: start with user's config, apply renames, then append new keys
+    const lines = userConfig.split('\n');
+    const resultLines = [];
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+            resultLines.push(line);
+            continue;
+        }
+        const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)/);
+        if (match) {
+            const key = match[1];
+            const value = match[2];
+            if (renameMap.has(key)) {
+                // Auto-rename: replace key name, keep user's value
+                const newKey = renameMap.get(key);
+                resultLines.push(`${newKey}=${value}`);
+            } else {
+                resultLines.push(line);
+            }
+        } else {
+            resultLines.push(line);
         }
     }
 
-    return changes;
+    // Append truly new keys (not rename targets) at the end
+    const renamedTargets = new Set(renameMap.values());
+    const trulyNewKeys = addedKeys.filter(k => !renamedTargets.has(k));
+
+    if (trulyNewKeys.length > 0) {
+        resultLines.push('');
+        resultLines.push('# --- New config keys (auto-added on update) ---');
+        for (const key of trulyNewKeys) {
+            const entry = exampleKeys.get(key);
+            resultLines.push(`${key}=${entry.value}`);
+            changes.push({
+                type: 'added',
+                key,
+                defaultValue: entry.value,
+                description: `New key '${key}' added with default value`
+            });
+        }
+    }
+
+    return { content: resultLines.join('\n'), changes };
 }
 
 /**
- * Parse env file content and extract key names (ignore comments and empty lines)
+ * Try to find a rename candidate for a removed key among added keys.
+ * Heuristics:
+ * 1. Same value in both old and new → likely rename
+ * 2. Similar key name (share 60%+ prefix/suffix) → likely rename
  */
-function parseEnvKeys(content) {
-    const keys = new Set();
+function findRenameCandidate(oldKey, addedKeys, oldValue, exampleKeys) {
+    // Strategy 1: exact same default value
+    for (const newKey of addedKeys) {
+        const newEntry = exampleKeys.get(newKey);
+        if (newEntry && oldValue && newEntry.value === oldValue && oldValue.length > 0) {
+            return newKey;
+        }
+    }
+
+    // Strategy 2: similar key name (Levenshtein-like)
+    const oldLower = oldKey.toLowerCase();
+    for (const newKey of addedKeys) {
+        const newLower = newKey.toLowerCase();
+        // Share common prefix (at least 60% of shorter key)
+        const minLen = Math.min(oldLower.length, newLower.length);
+        let commonPrefix = 0;
+        for (let i = 0; i < minLen; i++) {
+            if (oldLower[i] === newLower[i]) commonPrefix++;
+            else break;
+        }
+        if (commonPrefix >= minLen * 0.6 && commonPrefix >= 4) {
+            return newKey;
+        }
+
+        // Share common suffix
+        let commonSuffix = 0;
+        for (let i = 0; i < minLen; i++) {
+            if (oldLower[oldLower.length - 1 - i] === newLower[newLower.length - 1 - i]) commonSuffix++;
+            else break;
+        }
+        if (commonSuffix >= minLen * 0.6 && commonSuffix >= 4) {
+            return newKey;
+        }
+    }
+
+    return null; // No match found
+}
+
+/**
+ * Parse env file into structured entries
+ */
+function parseEnvEntries(content) {
+    const entries = [];
     for (const line of content.split('\n')) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-        if (match) keys.add(match[1]);
+        if (!trimmed || trimmed.startsWith('#')) {
+            entries.push({ type: 'comment', raw: line });
+            continue;
+        }
+        const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)/);
+        if (match) {
+            entries.push({ type: 'kv', key: match[1], value: match[2], raw: line });
+        } else {
+            entries.push({ type: 'other', raw: line });
+        }
     }
-    return keys;
+    return entries;
 }
 
 /**
