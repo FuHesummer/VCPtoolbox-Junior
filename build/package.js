@@ -58,12 +58,11 @@ const INCLUDE = [
     'README.md',
 ];
 
-// Files to exclude
+// Files/dirs to exclude (simple string match or glob-like)
 const EXCLUDE_PATTERNS = [
     'node_modules',
     '.git',
     'dist',
-    '*.sqlite',
     'VectorStore',
     'DebugLog',
     'AdminPanel',
@@ -178,7 +177,7 @@ async function copyRecursive(src, dest) {
         fs.mkdirSync(dest, { recursive: true });
         const entries = fs.readdirSync(src);
         for (const entry of entries) {
-            if (EXCLUDE_PATTERNS.some(p => entry === p || entry.match(p))) continue;
+            if (EXCLUDE_PATTERNS.includes(entry) || entry.endsWith('.sqlite')) continue;
             await copyRecursive(path.join(src, entry), path.join(dest, entry));
         }
     } else {
