@@ -11,8 +11,10 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-const PANEL_REPO = 'FuHesummer/VCPtoolbox-Junior-Panel';
-const RELEASE_API_URL = `https://api.github.com/repos/${PANEL_REPO}/releases/latest`;
+const DEFAULT_RELEASE_URL = 'https://api.github.com/repos/FuHesummer/VCPtoolbox-Junior-Panel/releases/latest';
+const RELEASE_API_URL = process.env.PANEL_RELEASE_URL || DEFAULT_RELEASE_URL;
+const PANEL_DISABLED = RELEASE_API_URL.toLowerCase() === 'disabled';
+const PANEL_AUTO_UPDATE = (process.env.PANEL_AUTO_UPDATE || 'true').toLowerCase() !== 'false';
 const PANEL_DIR = path.join(__dirname, '..', 'AdminPanel');
 const VERSION_FILE = path.join(PANEL_DIR, '.panel-version');
 const UPDATE_CHECK_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours
@@ -26,17 +28,24 @@ let lastCheckTime = 0;
 async function ensurePanel(options = {}) {
     const { force = false, silent = false } = options;
 
+    if (PANEL_DISABLED) {
+        if (!silent) console.log('[PanelUpdater] AdminPanel disabled by config (PANEL_RELEASE_URL=disabled)');
+        return false;
+    }
+
     // Check if panel already exists
     const panelExists = fsSync.existsSync(path.join(PANEL_DIR, 'index.html'));
 
     if (panelExists && !force) {
         // Panel exists, check for updates in background (non-blocking)
-        const now = Date.now();
-        if (now - lastCheckTime > UPDATE_CHECK_INTERVAL) {
-            lastCheckTime = now;
-            checkForUpdate(silent).catch(err => {
-                if (!silent) console.warn('[PanelUpdater] Background update check failed:', err.message);
-            });
+        if (PANEL_AUTO_UPDATE) {
+            const now = Date.now();
+            if (now - lastCheckTime > UPDATE_CHECK_INTERVAL) {
+                lastCheckTime = now;
+                checkForUpdate(silent).catch(err => {
+                    if (!silent) console.warn('[PanelUpdater] Background update check failed:', err.message);
+                });
+            }
         }
         return true;
     }
