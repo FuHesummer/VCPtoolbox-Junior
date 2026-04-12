@@ -404,12 +404,17 @@ app.post('/admin_api/config/main/reload-notify', async (req, res) => {
 });
 
 // ============================================================
-// 启动服务器
+// 启动服务器（先确保面板资源存在）
 // ============================================================
-app.listen(ADMIN_PORT, () => {
-    console.log(`[AdminServer] 管理面板独立进程已启动，监听端口 ${ADMIN_PORT}`);
-    console.log(`[AdminServer] 管理面板地址: http://localhost:${ADMIN_PORT}/AdminPanel/`);
-    console.log(`[AdminServer] 主服务地址: http://localhost:${MAIN_PORT}`);
-    console.log(`[AdminServer] 本地处理模块: ${localModules.join(', ')}`);
-    console.log(`[AdminServer] 未匹配的 /admin_api 请求将自动代理到主进程 PORT ${MAIN_PORT}`);
-});
+const { ensurePanel } = require('./modules/panelUpdater');
+
+(async () => {
+    await ensurePanel({ silent: false });
+    app.listen(ADMIN_PORT, () => {
+        console.log(`[AdminServer] 管理面板独立进程已启动，监听端口 ${ADMIN_PORT}`);
+        console.log(`[AdminServer] 管理面板地址: http://localhost:${ADMIN_PORT}/AdminPanel/`);
+        console.log(`[AdminServer] 主服务地址: http://localhost:${MAIN_PORT}`);
+        console.log(`[AdminServer] 本地处理模块: ${localModules.join(', ')}`);
+        console.log(`[AdminServer] 未匹配的 /admin_api 请求将自动代理到主进程 PORT ${MAIN_PORT}`);
+    });
+})();
