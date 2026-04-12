@@ -60,7 +60,9 @@ jobs:
 
       - name: Build rust-vexus-lite
         working-directory: rust-vexus-lite
-        run: npm run build
+        run: |
+          npm install
+          npm run build
 
       - name: Run package script
         run: node build/package.js ${{ matrix.platform }} ${{ matrix.arch }}
