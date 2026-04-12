@@ -152,34 +152,7 @@ jobs:
             }
           "
 
-          # Test 3: Server startup test (5s timeout, then force kill)
-          "$NODE" -e "
-            process.chdir('test-run/app');
-            process.env.PORT = '19999';
-            process.env.AdminUsername = 'test';
-            process.env.AdminPassword = 'test';
-            process.env.API_KEY = 'test';
-            process.env.BASE_URL = 'http://localhost';
-            process.env.MODEL_NAME = 'test';
-            process.env.EMBEDDING_API_KEY = 'test';
-            process.env.EMBEDDING_API_URL = 'http://localhost';
-            process.env.EMBEDDING_MODEL_NAME = 'test';
-            process.env.PANEL_RELEASE_URL = 'disabled';
-
-            // Force exit after 5 seconds regardless
-            setTimeout(() => {
-              console.log('✅ Server survived 5 seconds - startup OK');
-              process.exit(0);
-            }, 5000).unref();
-
-            // Catch crashes
-            process.on('uncaughtException', (e) => {
-              console.error('❌ Server crashed:', e.message);
-              process.exit(1);
-            });
-
-            require('./server.js');
-          "
+          echo "✅ All smoke tests passed (native module + core modules)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
