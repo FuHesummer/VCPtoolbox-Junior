@@ -25,7 +25,7 @@ jobs:
           - os: windows-latest
             platform: win32
             arch: x64
-            artifact: vcp-junior-win-x64.zip
+            artifact: vcp-junior-win32-x64.zip
           - os: ubuntu-latest
             platform: linux
             arch: x64
@@ -37,11 +37,11 @@ jobs:
           - os: macos-latest
             platform: darwin
             arch: arm64
-            artifact: vcp-junior-mac-arm64.tar.gz
+            artifact: vcp-junior-darwin-arm64.tar.gz
           - os: macos-14
             platform: darwin
             arch: x64
-            artifact: vcp-junior-mac-x64.tar.gz
+            artifact: vcp-junior-darwin-x64.tar.gz
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -67,11 +67,16 @@ jobs:
       - name: Run package script
         run: node build/package.js ${{ matrix.platform }} ${{ matrix.arch }}
 
+      - name: List dist output
+        run: ls -la dist/ || dir dist
+        shell: bash
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
+          if-no-files-found: warn
 
   release:
     needs: build

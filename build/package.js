@@ -129,7 +129,13 @@ async function main() {
     console.log('📦 Creating distributable...');
     if (platform === 'win32') {
         const zipName = `${packageName}.zip`;
-        execSync(`powershell -Command "Compress-Archive -Path '${outputDir}/*' -DestinationPath '${path.join(DIST_DIR, zipName)}' -Force"`, { stdio: 'pipe' });
+        const zipPath = path.join(DIST_DIR, zipName);
+        // Use 7z if available (much faster than PowerShell), fallback to Compress-Archive
+        try {
+            execSync(`7z a -mx=3 "${zipPath}" "${outputDir}/*"`, { stdio: 'pipe' });
+        } catch {
+            execSync(`powershell -Command "Compress-Archive -Path '${outputDir}/*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'pipe' });
+        }
         console.log(`\n✅ Built: dist/${zipName}`);
     } else {
         const tarName = `${packageName}.tar.gz`;
