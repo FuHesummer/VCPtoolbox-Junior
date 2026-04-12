@@ -198,15 +198,55 @@ async function install(pluginName, options = {}) {
         }
     }
 
-    // Auto-merge config: preserve user values, add new keys, handle renames
+    // Auto-merge config: use migrations if available, fallback to fuzzy merge
     let configChanges = [];
-    if (isUpdate && existingConfig && newExampleConfig) {
-        const merged = mergeConfig(existingConfig, newExampleConfig);
-        await fs.writeFile(configPath, merged.content, 'utf-8');
-        configChanges = merged.changes;
-    } else if (isUpdate && existingConfig) {
-        // No new example, just restore user config
-        await fs.writeFile(configPath, existingConfig, 'utf-8');
+    if (isUpdate && existingConfig) {
+        // Try to load config-migrations.json
+        let migrationsContent = null;
+        const migrationsFile = pluginFiles.find(f => f.path === `${prefix}config-migrations.json`);
+        if (migrationsFile) {
+            try {
+                const blob = await githubApi(`/repos/${REPO}/git/blobs/${migrationsFile.sha}`);
+                if (blob && blob.content) {
+                    migrationsContent = JSON.parse(Buffer.from(blob.content, blob.encoding || 'base64').toString('utf-8'));
+                }
+            } catch { /* migration file parse failed, fallback */ }
+        }
+
+        // Also try local (just downloaded)
+        if (!migrationsContent) {
+            const localMigPath = path.join(targetDir, 'config-migrations.json');
+            try {
+                migrationsContent = JSON.parse(await fs.readFile(localMigPath, 'utf-8'));
+            } catch { /* no local migrations */ }
+        }
+
+        // Get current installed version
+        let currentVersion = '0.0.0';
+        try {
+            const oldManifest = path.join(targetDir, 'plugin-manifest.json');
+            const oldBlocked = oldManifest + '.block';
+            let mf = null;
+            try { mf = JSON.parse(await fs.readFile(oldManifest, 'utf-8')); } catch {
+                try { mf = JSON.parse(await fs.readFile(oldBlocked, 'utf-8')); } catch {}
+            }
+            if (mf && mf.version) currentVersion = mf.version;
+        } catch {}
+
+        if (migrationsContent) {
+            // Use explicit migrations
+            const migrated = applyMigrations(existingConfig, migrationsContent, currentVersion);
+            await fs.writeFile(configPath, migrated.content, 'utf-8');
+            configChanges = migrated.changes;
+        } else if (newExampleConfig) {
+            // Fallback: fuzzy merge with example
+            const merged = mergeConfig(existingConfig, newExampleConfig);
+            await fs.writeFile(configPath, merged.content, 'utf-8');
+            configChanges = merged.changes;
+        } else {
+            // No migrations, no example — just restore user config
+            await fs.writeFile(configPath, existingConfig, 'utf-8');
+        }
     }
 
     let message = isUpdate
@@ -216,11 +256,104 @@ async function install(pluginName, options = {}) {
     if (configChanges.length > 0) {
         const added = configChanges.filter(c => c.type === 'added').length;
         const renamed = configChanges.filter(c => c.type === 'renamed').length;
-        if (added) message += ` +${added} new config(s) added.`;
-        if (renamed) message += ` ${renamed} config(s) auto-renamed.`;
+        const removed = configChanges.filter(c => c.type === 'removed').length;
+        if (added) message += ` +${added} config(s) added.`;
+        if (renamed) message += ` ${renamed} config(s) renamed.`;
+        if (removed) message += ` ${removed} config(s) removed.`;
     }
 
     return { success: true, message, configChanges };
+}
+
+/**
+ * Apply explicit config migrations from config-migrations.json
+ * Executes all migration steps from currentVersion to latest, in order.
+ *
+ * config-migrations.json format:
+ * {
+ *   "2.0.0": {
+ *     "renames": { "OLD_KEY": "NEW_KEY" },
+ *     "added": { "NEW_VAR": "default_value" },
+ *     "removed": ["DEPRECATED_VAR"]
+ *   }
+ * }
+ *
+ * @param {string} userConfig - Current config.env content
+ * @param {object} migrations - Parsed config-migrations.json
+ * @param {string} currentVersion - User's currently installed version
+ * @returns {{ content: string, changes: Array }}
+ */
+function applyMigrations(userConfig, migrations, currentVersion) {
+    const changes = [];
+    let lines = userConfig.split('\n');
+
+    // Sort migration versions and filter those > currentVersion
+    const versions = Object.keys(migrations)
+        .filter(v => compareVersions(v, currentVersion) > 0)
+        .sort((a, b) => compareVersions(a, b));
+
+    for (const version of versions) {
+        const step = migrations[version];
+
+        // Handle renames
+        if (step.renames) {
+            for (const [oldKey, newKey] of Object.entries(step.renames)) {
+                lines = lines.map(line => {
+                    const match = line.match(new RegExp(`^${escapeRegex(oldKey)}(\\s*=)(.*)`));
+                    if (match) {
+                        changes.push({ type: 'renamed', oldKey, newKey, version });
+                        return `${newKey}${match[1]}${match[2]}`;
+                    }
+                    return line;
+                });
+            }
+        }
+
+        // Handle removals
+        if (step.removed && Array.isArray(step.removed)) {
+            for (const key of step.removed) {
+                const before = lines.length;
+                lines = lines.filter(line => {
+                    const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+                    return !(match && match[1] === key);
+                });
+                if (lines.length < before) {
+                    changes.push({ type: 'removed', key, version });
+                }
+            }
+        }
+
+        // Handle additions
+        if (step.added) {
+            const existingKeys = new Set();
+            for (const line of lines) {
+                const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+                if (match) existingKeys.add(match[1]);
+            }
+
+            const toAdd = [];
+            for (const [key, defaultValue] of Object.entries(step.added)) {
+                if (!existingKeys.has(key)) {
+                    toAdd.push({ key, defaultValue });
+                    changes.push({ type: 'added', key, defaultValue, version });
+                }
+            }
+
+            if (toAdd.length > 0) {
+                lines.push('');
+                lines.push(`# --- Config added in v${version} ---`);
+                for (const { key, defaultValue } of toAdd) {
+                    lines.push(`${key}=${defaultValue}`);
+                }
+            }
+        }
+    }
+
+    return { content: lines.join('\n'), changes };
+}
+
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
