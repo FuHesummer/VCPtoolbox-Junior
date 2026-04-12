@@ -38,7 +38,7 @@ jobs:
             platform: darwin
             arch: arm64
             artifact: vcp-junior-mac-arm64.tar.gz
-          - os: macos-13
+          - os: macos-14
             platform: darwin
             arch: x64
             artifact: vcp-junior-mac-x64.tar.gz
