@@ -123,19 +123,32 @@ async function checkUpdates() {
     return updates;
 }
 
+// Files that should never be overwritten during update (user data)
+const PROTECTED_FILES = ['config.env', 'state/', 'data/', 'cache/'];
+
 /**
  * Download and install a plugin from remote
  * @param {string} pluginName - Plugin directory name
  * @param {object} options - { force: false }
- * @returns {Promise<{success: boolean, message: string}>}
+ * @returns {Promise<{success: boolean, message: string, configChanges: Array|null}>}
  */
 async function install(pluginName, options = {}) {
     const { force = false } = options;
     const targetDir = path.join(PLUGIN_DIR, pluginName);
+    const isUpdate = fsSync.existsSync(targetDir);
 
-    // Check if already installed
-    if (fsSync.existsSync(targetDir) && !force) {
-        return { success: false, message: `Plugin '${pluginName}' already installed. Use force=true to overwrite.` };
+    // Check if already installed (and not forcing)
+    if (isUpdate && !force) {
+        return { success: false, message: `Plugin '${pluginName}' already installed. Use force=true to update.` };
+    }
+
+    // Read existing config.env before update (to preserve it)
+    let existingConfig = null;
+    const configPath = path.join(targetDir, 'config.env');
+    if (isUpdate) {
+        try {
+            existingConfig = await fs.readFile(configPath, 'utf-8');
+        } catch { /* no existing config */ }
     }
 
     // Get file tree from GitHub
@@ -157,9 +170,16 @@ async function install(pluginName, options = {}) {
 
     // Download each file
     let downloaded = 0;
+    let newExampleConfig = null;
+
     for (const file of pluginFiles) {
         const relativePath = file.path.substring(prefix.length);
         const destPath = path.join(targetDir, relativePath);
+
+        // Skip protected files during updates
+        if (isUpdate && isProtectedFile(relativePath)) {
+            continue;
+        }
 
         // Create subdirectories
         await fs.mkdir(path.dirname(destPath), { recursive: true });
@@ -170,13 +190,88 @@ async function install(pluginName, options = {}) {
             const content = Buffer.from(blob.content, blob.encoding || 'base64');
             await fs.writeFile(destPath, content);
             downloaded++;
+
+            // Capture new example config for comparison
+            if (relativePath === 'config.env.example') {
+                newExampleConfig = content.toString('utf-8');
+            }
         }
     }
 
-    return {
-        success: true,
-        message: `Plugin '${pluginName}' installed successfully (${downloaded} files).`
-    };
+    // Restore protected config.env
+    if (isUpdate && existingConfig) {
+        await fs.writeFile(configPath, existingConfig, 'utf-8');
+    }
+
+    // Detect config changes (new/renamed keys)
+    let configChanges = null;
+    if (isUpdate && existingConfig && newExampleConfig) {
+        configChanges = detectConfigChanges(existingConfig, newExampleConfig);
+    }
+
+    let message = isUpdate
+        ? `Plugin '${pluginName}' updated successfully (${downloaded} files, config.env preserved).`
+        : `Plugin '${pluginName}' installed successfully (${downloaded} files).`;
+
+    if (configChanges && configChanges.length > 0) {
+        message += ` ⚠️ ${configChanges.length} new config key(s) detected.`;
+    }
+
+    return { success: true, message, configChanges };
+}
+
+/**
+ * Check if a file path is protected (should not be overwritten)
+ */
+function isProtectedFile(relativePath) {
+    for (const pattern of PROTECTED_FILES) {
+        if (pattern.endsWith('/')) {
+            if (relativePath.startsWith(pattern)) return true;
+        } else {
+            if (relativePath === pattern) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Compare user's config.env with new config.env.example to detect changes
+ * @returns {Array} List of { key, type: 'new'|'removed', description }
+ */
+function detectConfigChanges(userConfig, exampleConfig) {
+    const userKeys = parseEnvKeys(userConfig);
+    const exampleKeys = parseEnvKeys(exampleConfig);
+    const changes = [];
+
+    // Keys in example but not in user's config = new keys to add
+    for (const key of exampleKeys) {
+        if (!userKeys.has(key)) {
+            changes.push({ key, type: 'new', description: `New config key '${key}' available in this version` });
+        }
+    }
+
+    // Keys in user's config but not in example = potentially removed/renamed
+    for (const key of userKeys) {
+        if (!exampleKeys.has(key)) {
+            changes.push({ key, type: 'removed', description: `Config key '${key}' no longer in example (may be renamed)` });
+        }
+    }
+
+    return changes;
+}
+
+/**
+ * Parse env file content and extract key names (ignore comments and empty lines)
+ */
+function parseEnvKeys(content) {
+    const keys = new Set();
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+        if (match) keys.add(match[1]);
+    }
+    return keys;
 }
 
 /**
