@@ -277,7 +277,7 @@ FuHesummer/VCPtoolbox-Junior (本仓库，精简解耦)
 | 贡献者 | 角色 |
 |--------|------|
 | [FuHe](https://github.com/FuHesummer) | 项目发起 / 架构设计 |
-| 辉宝 | `config-migrations.json` 声明式配置迁移方案设计 |
+| 辉宝 | 项目命名 (VCPtoolbox-Junior) |
 
 ---
 
