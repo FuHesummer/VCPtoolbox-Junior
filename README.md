@@ -272,6 +272,15 @@ FuHesummer/VCPtoolbox-Junior (本仓库，精简解耦)
 
 ---
 
+## Contributors
+
+| 贡献者 | 角色 |
+|--------|------|
+| [FuHe](https://github.com/FuHesummer) | 项目发起 / 架构设计 |
+| 辉宝 | `config-migrations.json` 声明式配置迁移方案设计 |
+
+---
+
 ## License
 
 [MIT](./LICENSE) — 基于上游 VCPToolBox 的许可
