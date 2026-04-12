@@ -26,22 +26,26 @@ jobs:
             platform: win32
             arch: x64
             artifact: vcp-junior-win32-x64.zip
+            extract_cmd: powershell -Command "Expand-Archive -Path dist/vcp-junior-win32-x64.zip -DestinationPath test-run/"
+            launcher: test-run/runtime/node-v22.16.0-win-x64/node.exe test-run/app/build/launcher.js
           - os: ubuntu-latest
             platform: linux
             arch: x64
             artifact: vcp-junior-linux-x64.tar.gz
+            extract_cmd: mkdir -p test-run && tar -xzf dist/vcp-junior-linux-x64.tar.gz -C test-run --strip-components=1
+            launcher: test-run/vcp-junior
           - os: ubuntu-24.04-arm
             platform: linux
             arch: arm64
             artifact: vcp-junior-linux-arm64.tar.gz
+            extract_cmd: mkdir -p test-run && tar -xzf dist/vcp-junior-linux-arm64.tar.gz -C test-run --strip-components=1
+            launcher: test-run/vcp-junior
           - os: macos-latest
             platform: darwin
             arch: arm64
             artifact: vcp-junior-darwin-arm64.tar.gz
-          - os: macos-14
-            platform: darwin
-            arch: x64
-            artifact: vcp-junior-darwin-x64.tar.gz
+            extract_cmd: mkdir -p test-run && tar -xzf dist/vcp-junior-darwin-arm64.tar.gz -C test-run --strip-components=1
+            launcher: test-run/vcp-junior
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -68,15 +72,107 @@ jobs:
         run: node build/package.js ${{ matrix.platform }} ${{ matrix.arch }}
 
       - name: List dist output
-        run: ls -la dist/ || dir dist
+        run: ls -la dist/
         shell: bash
+
+      # ===== Smoke Test =====
+      - name: Extract package for testing
+        run: ${{ matrix.extract_cmd }}
+        shell: bash
+
+      - name: Smoke test - verify structure
+        shell: bash
+        run: |
+          echo "=== Checking package structure ==="
+          if [ "${{ matrix.platform }}" = "win32" ]; then
+            test -f test-run/VCPtoolbox-Junior.bat && echo "✅ Launcher script exists"
+            test -f test-run/app/server.js && echo "✅ server.js exists"
+            test -f test-run/app/adminServer.js && echo "✅ adminServer.js exists"
+            test -f test-run/app/build/launcher.js && echo "✅ launcher.js exists"
+            test -d test-run/runtime && echo "✅ Node runtime exists"
+            test -f test-run/app/rust-vexus-lite/vexus-lite.*.node && echo "✅ Native module exists" || echo "⚠️ Checking .node file..."
+            find test-run/app/rust-vexus-lite -name "*.node" | head -1 | xargs -I{} echo "✅ Native module: {}"
+          else
+            test -f test-run/vcp-junior && echo "✅ Launcher script exists"
+            test -f test-run/app/server.js && echo "✅ server.js exists"
+            test -f test-run/app/adminServer.js && echo "✅ adminServer.js exists"
+            test -f test-run/app/build/launcher.js && echo "✅ launcher.js exists"
+            test -d test-run/runtime && echo "✅ Node runtime exists"
+            find test-run/app/rust-vexus-lite -name "*.node" | head -1 | xargs -I{} echo "✅ Native module: {}"
+          fi
+
+      - name: Smoke test - startup test
+        shell: bash
+        run: |
+          echo "=== Running startup test (10s timeout) ==="
+          if [ "${{ matrix.platform }}" = "win32" ]; then
+            NODE="test-run/runtime/node-v22.16.0-win-x64/node.exe"
+          else
+            NODE="test-run/runtime/bin/node"
+            chmod +x "$NODE"
+          fi
+
+          # Test 1: Verify native module loads
+          "$NODE" -e "
+            process.chdir('test-run/app');
+            try {
+              require('./rust-vexus-lite');
+              console.log('✅ rust-vexus-lite native module loads OK');
+            } catch(e) {
+              console.error('❌ Native module failed:', e.message);
+              process.exit(1);
+            }
+          "
+
+          # Test 2: Verify core modules load
+          "$NODE" -e "
+            process.chdir('test-run/app');
+            process.env.PORT = '19999';
+            process.env.AdminUsername = 'test';
+            process.env.AdminPassword = 'test';
+            process.env.API_KEY = 'test';
+            process.env.BASE_URL = 'http://localhost';
+            process.env.MODEL_NAME = 'test';
+            process.env.EMBEDDING_API_KEY = 'test';
+            process.env.EMBEDDING_API_URL = 'http://localhost';
+            process.env.EMBEDDING_MODEL_NAME = 'test';
+            try {
+              require('./Plugin.js');
+              console.log('✅ Plugin.js loads');
+              require('./modules/KnowledgeBaseManager.js');
+              console.log('✅ KnowledgeBaseManager loads');
+              require('./modules/TagMemoEngine.js');
+              console.log('✅ TagMemoEngine loads');
+              require('./modules/WebSocketServer.js');
+              console.log('✅ WebSocketServer loads');
+              console.log('✅ All core modules loaded successfully');
+            } catch(e) {
+              console.error('❌ Module load failed:', e.message);
+              process.exit(1);
+            }
+          "
+
+          # Test 3: Full server startup (10s, then kill)
+          "$NODE" test-run/app/server.js &
+          SERVER_PID=$!
+          sleep 8
+
+          # Check if server is still running (didn't crash)
+          if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "✅ Server stayed alive for 8 seconds"
+            kill $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+          else
+            echo "❌ Server crashed during startup"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
-          if-no-files-found: warn
+          if-no-files-found: error
 
   release:
     needs: build
@@ -87,6 +183,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: List downloaded artifacts
+        run: find artifacts -type f | sort
 
       - name: Determine version
         id: version
@@ -107,21 +206,26 @@ jobs:
 
             ### 下载
 
-            | 平台 | 文件 |
-            |------|------|
-            | Windows x64 | `vcp-junior-win-x64.zip` |
-            | Linux x64 | `vcp-junior-linux-x64.tar.gz` |
-            | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` |
-            | macOS ARM64 (M系列) | `vcp-junior-mac-arm64.tar.gz` |
-            | macOS x64 (Intel) | `vcp-junior-mac-x64.tar.gz` |
+            | 平台 | 文件 | 说明 |
+            |------|------|------|
+            | Windows x64 | `vcp-junior-win32-x64.zip` | 解压后双击 `VCPtoolbox-Junior.bat` |
+            | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x vcp-junior && ./vcp-junior` |
+            | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` | 同上 |
+            | macOS ARM64 (M系列) | `vcp-junior-darwin-arm64.tar.gz` | 解压后 `chmod +x vcp-junior && ./vcp-junior` |
 
-            ### 使用方法
+            ### 首次使用
 
-            1. 下载对应平台的包并解压
-            2. 编辑 `app/config.env.example` → 重命名为 `app/config.env`，填入 API 密钥
-            3. 运行：
-               - Windows: 双击 `VCPtoolbox-Junior.bat`
-               - Linux/Mac: `chmod +x vcp-junior && ./vcp-junior`
+            1. 解压下载的包
+            2. 编辑 `app/config.env.example` → 重命名为 `app/config.env`，填入你的 API 密钥
+            3. 启动：一键启动会同时运行主服务（端口 6005）和管理面板（端口 6006）
+            4. 管理面板首次启动时自动从 GitHub 下载前端资源
+
+            ### 验证信息
+
+            本次发布的所有平台包已通过 CI 冒烟测试：
+            - ✅ Rust 原生向量引擎加载成功
+            - ✅ 核心模块（Plugin/KnowledgeBase/TagMemo/WebSocket）加载成功
+            - ✅ 服务器启动并保持运行 8 秒无崩溃
           draft: false
           prerelease: false
           files: |

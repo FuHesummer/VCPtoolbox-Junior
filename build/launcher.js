@@ -3,7 +3,7 @@
  * VCPtoolbox-Junior Launcher
  * 统一启动入口：同时启动主服务和管理面板进程
  */
-const { spawn, fork } = require('child_process');
+const { fork } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -26,38 +26,52 @@ if (!fs.existsSync(CONFIG_FILE)) {
     }
 }
 
-console.log('╔══════════════════════════════════════════════╗');
-console.log('║       VCPtoolbox-Junior Starting...         ║');
-console.log('╚══════════════════════════════════════════════╝\n');
+// Load config to display ports
+require('dotenv').config({ path: CONFIG_FILE });
+const PORT = parseInt(process.env.PORT) || 6005;
+const ADMIN_PORT = PORT + 1;
+
+console.log('╔══════════════════════════════════════════════════╗');
+console.log('║         VCPtoolbox-Junior Starting...           ║');
+console.log('╠═════════════���════════════════════════════��═══════╣');
+console.log(`║  Main Server  : http://localhost:${PORT}             ║`);
+console.log(`║  Admin Panel  : http://localhost:${ADMIN_PORT}/AdminPanel/  ║`);
+console.log('╚══════════���════════════════════════════���══════════╝\n');
+
+let server = null;
+let admin = null;
+
+// Graceful shutdown handler
+const shutdown = () => {
+    console.log('\n[Launcher] Shutting down...');
+    if (server) server.kill('SIGTERM');
+    if (admin) admin.kill('SIGTERM');
+    setTimeout(() => process.exit(0), 3000);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 // Start main server
-const server = fork(SERVER_JS, [], { cwd: ROOT, stdio: 'inherit' });
+server = fork(SERVER_JS, [], { cwd: ROOT, stdio: 'inherit' });
 server.on('error', (err) => {
     console.error('[Launcher] Main server error:', err.message);
 });
-
-// Start admin server (delayed to avoid port race)
-setTimeout(() => {
-    const admin = fork(ADMIN_JS, [], { cwd: ROOT, stdio: 'inherit' });
-    admin.on('error', (err) => {
-        console.error('[Launcher] Admin server error:', err.message);
-    });
-
-    // Handle shutdown
-    const shutdown = () => {
-        console.log('\n[Launcher] Shutting down...');
-        server.kill('SIGTERM');
-        admin.kill('SIGTERM');
-        setTimeout(() => process.exit(0), 2000);
-    };
-
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-}, 2000);
-
 server.on('exit', (code) => {
     if (code !== 0 && code !== null) {
         console.error(`[Launcher] Main server exited with code ${code}`);
         process.exit(code);
     }
 });
+
+// Start admin server (delayed to let main server bind port first)
+setTimeout(() => {
+    admin = fork(ADMIN_JS, [], { cwd: ROOT, stdio: 'inherit' });
+    admin.on('error', (err) => {
+        console.error('[Launcher] Admin panel error:', err.message);
+    });
+    admin.on('exit', (code) => {
+        if (code !== 0 && code !== null) {
+            console.warn(`[Launcher] Admin panel exited with code ${code} (non-fatal)`);
+        }
+    });
+}, 3000);
