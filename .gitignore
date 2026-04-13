@@ -159,8 +159,9 @@ tag-processor-config.env
 # ===== 运行时数据 / 缓存 =====
 DebugLog/
 VCPTimedContacts/
-knowledge/*
-!knowledge/.gitkeep
+# knowledge/ — tracked (public knowledge base + examples)
+# Only ignore runtime vector data inside it
+knowledge/**/VectorStore/
 thinking/*
 !thinking/.gitkeep
 ip_blacklist.json
@@ -179,7 +180,7 @@ Plugin/ProjectAnalyst/database/
 Plugin/RAGDiaryPlugin/vector_cache.json
 Plugin/RAGDiaryPlugin/meta_chain_vector_cache.json
 Plugin/RAGDiaryPlugin/rag_tags.json
-Plugin/RAGDiaryPlugin/semantic_groups.json
+# semantic_groups.json tracked with default empty content; .edit.json is runtime only
 Plugin/RAGDiaryPlugin/semantic_groups.edit.json
 Plugin/RAGDiaryPlugin/semantic_vectors/
 Plugin/TavilySearch/.vcptoolbox_tavily_cache.json
