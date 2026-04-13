@@ -24,7 +24,6 @@ const NATIVE_EXTERNALS = [
     'fsevents',
     'node-fetch',
     '@dqbd/tiktoken',  // loads tiktoken_bg.wasm via __dirname
-    'pm2',             // optional deps (term.js, pty.js) break esbuild
 ];
 
 /**
@@ -109,7 +108,8 @@ async function build() {
         platform: 'node',
         target: 'node20',
         format: 'cjs',
-        external: [],
+        // pm2: optional, try/catch in system.js; its dep tree breaks esbuild
+        external: ['pm2'],
         plugins: [seaNativePlugin],
         sourcemap: false,
         minify: true,

@@ -5,7 +5,9 @@ const { exec } = require('child_process');
 const os = require('os');
 const util = require('util');
 const execAsync = util.promisify(exec);
-const pm2 = require('pm2');
+// pm2 is optional — not available in SEA/bundled mode
+let pm2 = null;
+try { pm2 = require('pm2'); } catch { /* pm2 not available */ }
 const { getAuthCode } = require('../../modules/captchaDecoder');
 
 module.exports = function(options) {
@@ -14,6 +16,9 @@ module.exports = function(options) {
 
     // 获取PM2进程列表和资源使用情况
     router.get('/system-monitor/pm2/processes', (req, res) => {
+        if (!pm2) {
+            return res.status(503).json({ success: false, error: 'PM2 not available in bundled mode' });
+        }
         pm2.list((err, list) => {
             if (err) {
                 console.error('[SystemMonitor] PM2 API Error:', err);

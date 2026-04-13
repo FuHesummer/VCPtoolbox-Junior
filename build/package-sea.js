@@ -33,7 +33,6 @@ const NATIVE_MODULES = [
     '@node-rs/jieba',
     '@napi-rs/canvas',
     '@dqbd/tiktoken',   // WASM dependency (tiktoken_bg.wasm)
-    'pm2',              // optional deps (term.js, pty.js) break esbuild
     // node-fetch is ESM-only, cannot be bundled into CJS
     'node-fetch',
     'data-uri-to-buffer',
