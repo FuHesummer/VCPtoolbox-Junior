@@ -11,7 +11,7 @@ const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'Asia/Shanghai'; // æ–°å¢
 function resolveAgentDir() {
     const configPath = process.env.AGENT_DIR_PATH;
     if (!configPath || typeof configPath !== 'string' || configPath.trim() === '') {
-        return path.join(__dirname, '..', 'Agent');
+        return path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'Agent');
     }
     const normalizedPath = path.normalize(configPath.trim());
     return path.isAbsolute(normalizedPath)
@@ -22,7 +22,7 @@ const AGENT_DIR = resolveAgentDir();
 function resolveTvsDir() {
     const configPath = process.env.TVSTXT_DIR_PATH;
     if (!configPath || typeof configPath !== 'string' || configPath.trim() === '') {
-        return path.join(__dirname, '..', 'TVStxt');
+        return path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'TVStxt');
     }
     const normalizedPath = path.normalize(configPath.trim());
     return path.isAbsolute(normalizedPath)
@@ -30,7 +30,7 @@ function resolveTvsDir() {
         : path.resolve(__dirname, '..', normalizedPath);
 }
 const TVS_DIR = resolveTvsDir();
-const VCP_ASYNC_RESULTS_DIR = path.join(__dirname, '..', 'VCPAsyncResults');
+const VCP_ASYNC_RESULTS_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'VCPAsyncResults');
 
 async function resolveAllVariables(text, model, role, context, processingStack = new Set()) {
     if (text == null) return '';

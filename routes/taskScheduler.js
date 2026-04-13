@@ -8,7 +8,7 @@ let pluginManager;
 let webSocketServer;
 let DEBUG_MODE = false;
 
-const TIMED_CONTACTS_DIR = path.join(__dirname, '..', 'VCPTimedContacts');
+const TIMED_CONTACTS_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'VCPTimedContacts');
 const scheduledJobs = new Map(); // 重命名以反映其存储的是 Job 对象
 
 async function executeTimedContact(task, filePath) {

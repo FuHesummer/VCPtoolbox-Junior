@@ -15,7 +15,7 @@ const https = require('https');
 
 const DEFAULT_REPO = 'FuHesummer/VCPtoolbox-Junior-Plugins';
 const REPO = process.env.PLUGIN_STORE_REPO || DEFAULT_REPO;
-const PLUGIN_DIR = path.join(__dirname, '..', 'Plugin');
+const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'Plugin');
 const STORE_CACHE_FILE = path.join(PLUGIN_DIR, '.store-cache.json');
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 const STALE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h stale fallback on error

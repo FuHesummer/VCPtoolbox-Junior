@@ -103,7 +103,7 @@ function formatToolResult(result) {
 
 async function getRealAuthCode(debugMode = false) {
   try {
-    const authCodePath = path.join(__dirname, '..', 'Plugin', 'UserAuth', 'code.bin');
+    const authCodePath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'Plugin', 'UserAuth', 'code.bin');
     // 使用正确的 getAuthCode 函数，它会自行处理文件读取和解码
     return await getAuthCode(authCodePath);
   } catch (error) {

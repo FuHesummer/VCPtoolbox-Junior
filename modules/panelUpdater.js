@@ -15,7 +15,7 @@ const DEFAULT_RELEASE_URL = 'https://api.github.com/repos/FuHesummer/VCPtoolbox-
 const RELEASE_API_URL = process.env.PANEL_RELEASE_URL || DEFAULT_RELEASE_URL;
 const PANEL_DISABLED = RELEASE_API_URL.toLowerCase() === 'disabled';
 const PANEL_AUTO_UPDATE = (process.env.PANEL_AUTO_UPDATE || 'true').toLowerCase() !== 'false';
-const PANEL_DIR = path.join(__dirname, '..', 'AdminPanel');
+const PANEL_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'AdminPanel');
 const VERSION_FILE = path.join(PANEL_DIR, '.panel-version');
 const UPDATE_CHECK_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours
 

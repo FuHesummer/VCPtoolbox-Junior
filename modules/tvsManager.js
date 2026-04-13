@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const chokidar = require('chokidar');
 
-let TVS_DIR = path.join(__dirname, '..', 'TVStxt');
+let TVS_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'TVStxt');
 
 class TvsManager {
     constructor() {

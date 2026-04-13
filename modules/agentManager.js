@@ -4,7 +4,7 @@ const fsSync = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 
-const MAP_FILE = path.join(__dirname, '..', 'agent_map.json');
+const MAP_FILE = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'agent_map.json');
 
 class AgentManager {
     constructor(defaultAgentDir = null) {
@@ -335,5 +335,5 @@ class AgentManager {
     }
 }
 
-const agentManager = new AgentManager(path.join(__dirname, '..', 'Agent'));
+const agentManager = new AgentManager(path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'Agent'));
 module.exports = agentManager;

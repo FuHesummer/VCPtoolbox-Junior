@@ -8,7 +8,7 @@ const MAP_FILE = path.join(__dirname, 'toolbox_map.json');
 function resolveTvsDir() {
   const configPath = process.env.TVSTXT_DIR_PATH;
   if (!configPath || typeof configPath !== 'string' || configPath.trim() === '') {
-    return path.join(__dirname, '..', 'TVStxt');
+    return path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'TVStxt');
   }
   const normalizedPath = path.normalize(configPath.trim());
   return path.isAbsolute(normalizedPath)
