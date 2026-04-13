@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 
 // Native modules that cannot be bundled (contain .node binaries)
+// These are resolved at runtime via Module.createRequire() for SEA compatibility
 const NATIVE_EXTERNALS = [
     'better-sqlite3',
     'hnswlib-node',
@@ -24,45 +25,55 @@ const NATIVE_EXTERNALS = [
     'node-fetch',
 ];
 
-// SEA compatibility banner:
-// In SEA mode, the built-in `require` (embedderRequire) can only load
-// Node.js built-in modules. External npm packages like better-sqlite3
-// need Module.createRequire() to resolve from node_modules/.
-// This banner patches `require` so externals work in both normal and SEA mode.
-const SEA_REQUIRE_BANNER = [
-    '// SEA require patch — enables node_modules resolution in embedded mode',
-    ';var _seaM=require("module");',
-    'if(_seaM.createRequire){',
-    '  var _seaOrig=require,',
-    '      _seaCR=_seaM.createRequire(__filename||process.execPath);',
-    '  require=function(id){',
-    '    try{return _seaOrig(id)}',
-    '    catch(e){if(e.code==="ERR_UNKNOWN_BUILTIN_MODULE")return _seaCR(id);throw e}',
-    '  };',
-    '}',
-].join('');
+/**
+ * SEA-compatible native module plugin.
+ *
+ * In Node.js SEA mode, the built-in `require` (embedderRequire) can only
+ * load built-in modules. npm packages like better-sqlite3 need a real
+ * require created via Module.createRequire().
+ *
+ * This plugin intercepts imports of native/external modules at build time
+ * and replaces them with a shim that uses createRequire at runtime.
+ * Works in both normal Node.js and SEA mode.
+ */
+const seaNativePlugin = {
+    name: 'sea-native-resolver',
+    setup(build) {
+        // Build regex matching all native externals
+        const escaped = NATIVE_EXTERNALS
+            .map(m => m.replace(/[.*+?^${}()|[\]\\/@]/g, '\\$&'));
+        const nativePattern = new RegExp(
+            '^(' + escaped.join('|') + ')(/.*)?$'
+        );
 
-const SHARED_OPTIONS = {
-    bundle: true,
-    platform: 'node',
-    target: 'node20',
-    format: 'cjs',
-    external: [
-        ...NATIVE_EXTERNALS,
-        './rust-vexus-lite/*',
-        '../rust-vexus-lite/*',
-    ],
-    sourcemap: false,
-    minify: true,
-    keepNames: true,
-    logLevel: 'info',
+        // Intercept native module imports → virtual shim
+        build.onResolve({ filter: nativePattern }, (args) => ({
+            path: args.path,
+            namespace: 'sea-native',
+        }));
+
+        // Intercept rust-vexus-lite (relative paths from various source files)
+        build.onResolve({ filter: /[./]*rust-vexus-lite/ }, (args) => ({
+            path: './rust-vexus-lite',
+            namespace: 'sea-native',
+        }));
+
+        // Generate shim code that uses Module.createRequire()
+        build.onLoad({ filter: /.*/, namespace: 'sea-native' }, (args) => ({
+            contents: [
+                'var _m = require("module");',
+                'var _r = _m.createRequire(__filename || process.execPath);',
+                `module.exports = _r(${JSON.stringify(args.path)});`,
+            ].join('\n'),
+            loader: 'js',
+        }));
+    },
 };
 
 async function build() {
     fs.mkdirSync(DIST, { recursive: true });
 
     // Write combined entry point (temp file, cleaned up after build)
-    // server.js self-starts on require; adminServer.js starts 3s later
     const entryFile = path.join(__dirname, '_combined-entry.js');
     fs.writeFileSync(entryFile, [
         '// VCPtoolbox-Junior — combined entry (server + admin, single process)',
@@ -75,10 +86,20 @@ async function build() {
 
     console.log('📦 Bundling server + admin into single bundle...');
     await esbuild.build({
-        ...SHARED_OPTIONS,
+        bundle: true,
+        platform: 'node',
+        target: 'node20',
+        format: 'cjs',
+        // No 'external' needed — seaNativePlugin handles native modules
+        // and esbuild auto-externalizes Node.js built-ins in platform:node
+        external: [],
+        plugins: [seaNativePlugin],
+        sourcemap: false,
+        minify: true,
+        keepNames: true,
+        logLevel: 'info',
         entryPoints: [entryFile],
         outfile: path.join(DIST, 'vcp.bundle.js'),
-        banner: { js: SEA_REQUIRE_BANNER },
     });
 
     // Cleanup temp entry
