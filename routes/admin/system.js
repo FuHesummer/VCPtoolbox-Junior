@@ -17,24 +17,28 @@ module.exports = function(options) {
     // 获取PM2进程列表和资源使用情况
     router.get('/system-monitor/pm2/processes', (req, res) => {
         if (!pm2) {
-            return res.json({ success: true, processes: [], message: 'PM2 not available (bundled mode)' });
+            return res.json({ success: true, processes: [] });
         }
-        pm2.list((err, list) => {
-            if (err) {
-                console.error('[SystemMonitor] PM2 API Error:', err);
-                return res.status(500).json({ success: false, error: 'Failed to get PM2 processes via API', details: err.message });
-            }
+        // pm2.list() can hang if pm2 daemon isn't running — add timeout
+        const timeout = setTimeout(() => {
+            res.json({ success: true, processes: [], message: 'PM2 daemon not responding' });
+        }, 3000);
 
+        pm2.list((err, list) => {
+            clearTimeout(timeout);
+            if (res.headersSent) return;
+            if (err) {
+                return res.json({ success: true, processes: [] });
+            }
             const processInfo = list.map(proc => ({
                 name: proc.name,
                 pid: proc.pid,
-                status: proc.pm2_env.status,
-                cpu: proc.monit.cpu,
-                memory: proc.monit.memory,
-                uptime: proc.pm2_env.pm_uptime,
-                restarts: proc.pm2_env.restart_time
+                status: proc.pm2_env?.status,
+                cpu: proc.monit?.cpu,
+                memory: proc.monit?.memory,
+                uptime: proc.pm2_env?.pm_uptime,
+                restarts: proc.pm2_env?.restart_time
             }));
-
             res.json({ success: true, processes: processInfo });
         });
     });
