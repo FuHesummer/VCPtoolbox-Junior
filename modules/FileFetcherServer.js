@@ -7,7 +7,7 @@ const crypto = require('crypto');
 
 const failedFetchCache = new Map();
 const CACHE_EXPIRATION_MS = 30000; // 30秒内防止重复失败请求
-const CACHE_DIR = path.join(__dirname, '..', '.file_cache');
+const CACHE_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), '.file_cache');
 const recentRequests = new Map(); // 新增：用于检测快速循环的请求缓存
 const REQ_CACHE_EXPIRATION_MS = 5000; // 5秒内重复请求视为潜在循环
 

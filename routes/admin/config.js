@@ -8,7 +8,7 @@ module.exports = function(options) {
 
     // --- Tool Approval Config API ---
     router.get('/tool-approval-config', async (req, res) => {
-        const configPath = path.join(__dirname, '..', '..', 'modules', 'toolApprovalConfig.json');
+        const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'modules', 'toolApprovalConfig.json');
         try {
             const content = await fs.readFile(configPath, 'utf-8');
             res.json(JSON.parse(content));
@@ -27,7 +27,7 @@ module.exports = function(options) {
         if (typeof config !== 'object' || config === null) {
             return res.status(400).json({ error: 'Invalid configuration data. Object expected.' });
         }
-        const configPath = path.join(__dirname, '..', '..', 'modules', 'toolApprovalConfig.json');
+        const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'modules', 'toolApprovalConfig.json');
         try {
             await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
             res.json({ success: true, message: '工具调用审核配置已成功保存。' });
@@ -40,7 +40,7 @@ module.exports = function(options) {
     // --- Main Config API ---
     router.get('/config/main', async (req, res) => {
         try {
-            const configPath = path.join(__dirname, '..', '..', 'config.env');
+            const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'config.env');
             const content = await fs.readFile(configPath, 'utf-8');
             res.json({ content: content });
         } catch (error) {
@@ -51,7 +51,7 @@ module.exports = function(options) {
 
     router.get('/config/main/raw', async (req, res) => {
         try {
-            const configPath = path.join(__dirname, '..', '..', 'config.env');
+            const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'config.env');
             const content = await fs.readFile(configPath, 'utf-8');
             res.json({ content: content });
         } catch (error) {
@@ -66,7 +66,7 @@ module.exports = function(options) {
             return res.status(400).json({ error: 'Invalid content format. String expected.' });
         }
         try {
-            const configPath = path.join(__dirname, '..', '..', 'config.env');
+            const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'config.env');
             await fs.writeFile(configPath, content, 'utf-8');
             await pluginManager.loadPlugins();
             res.json({ message: '主配置已成功保存并已重新加载。' });

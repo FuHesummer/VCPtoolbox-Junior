@@ -103,7 +103,7 @@ class SSHManager {
         // 回退机制：如果全局配置没找到，尝试读取插件本地 hosts.json
         if (!config) {
             try {
-                const localHostsPath = path.join(__dirname, '..', '..', 'Plugin', 'LinuxShellExecutor', 'hosts.json');
+                const localHostsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'LinuxShellExecutor', 'hosts.json');
                 const fsSync = require('fs');
                 if (fsSync.existsSync(localHostsPath)) {
                     const localData = JSON.parse(fsSync.readFileSync(localHostsPath, 'utf8'));
@@ -306,7 +306,7 @@ class SSHManager {
         }
         // 相对路径
         else {
-            const root = basePath || path.join(__dirname, '..', '..', 'Plugin', 'LinuxShellExecutor');
+            const root = basePath || path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'LinuxShellExecutor');
             resolvedPath = path.join(root, keyPath);
         }
         

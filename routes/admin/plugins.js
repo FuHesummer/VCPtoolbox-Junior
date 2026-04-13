@@ -9,8 +9,8 @@ const blockedManifestExtension = '.block';
 module.exports = function(options) {
     const router = express.Router();
     const { pluginManager, DEBUG_MODE } = options;
-    const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
-    const PREPROCESSOR_ORDER_FILE = path.join(__dirname, '..', '..', 'preprocessor_order.json');
+    const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin');
+    const PREPROCESSOR_ORDER_FILE = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'preprocessor_order.json');
 
     // Helper: find plugin path and manifest by name
     async function _findPlugin(pluginName) {
@@ -64,7 +64,7 @@ module.exports = function(options) {
     router.get('/plugins', async (req, res) => {
         try {
             const pluginDataMap = new Map();
-            const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+            const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin');
 
             const loadedPlugins = Array.from(pluginManager.plugins.values());
             for (const p of loadedPlugins) {
@@ -148,7 +148,7 @@ module.exports = function(options) {
     router.post('/plugins/:pluginName/toggle', async (req, res) => {
         const pluginName = req.params.pluginName;
         const { enable } = req.body;
-        const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+        const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin');
 
         if (typeof enable !== 'boolean') {
             return res.status(400).json({ error: 'Invalid request body. Expected { enable: boolean }.' });
@@ -241,7 +241,7 @@ module.exports = function(options) {
     router.post('/plugins/:pluginName/description', async (req, res) => {
         const pluginName = req.params.pluginName;
         const { description } = req.body;
-        const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+        const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin');
 
         if (typeof description !== 'string') {
             return res.status(400).json({ error: 'Invalid request body. Expected { description: string }.' });
@@ -301,7 +301,7 @@ module.exports = function(options) {
     router.post('/plugins/:pluginName/config', async (req, res) => {
         const pluginName = req.params.pluginName;
         const { content } = req.body;
-        const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+        const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin');
 
         if (typeof content !== 'string') {
             return res.status(400).json({ error: 'Invalid content format. String expected.' });
@@ -353,7 +353,7 @@ module.exports = function(options) {
     router.post('/plugins/:pluginName/commands/:commandIdentifier/description', async (req, res) => {
         const { pluginName, commandIdentifier } = req.params;
         const { description } = req.body;
-        const PLUGIN_DIR = path.join(__dirname, '..', '..', 'Plugin');
+        const PLUGIN_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin');
 
         if (typeof description !== 'string') {
             return res.status(400).json({ error: 'Invalid request body. Expected { description: string }.' });

@@ -128,7 +128,7 @@ module.exports = function(options) {
 
     // 获取 UserAuth 认证码
     router.get('/user-auth-code', async (req, res) => {
-        const authCodePath = path.join(__dirname, '..', '..', 'Plugin', 'UserAuth', 'code.bin');
+        const authCodePath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'UserAuth', 'code.bin');
         try {
             const decryptedCode = await getAuthCode(authCodePath);
             if (decryptedCode) {
@@ -147,7 +147,7 @@ module.exports = function(options) {
 
     // 获取天气预报数据
     router.get('/weather', async (req, res) => {
-        const weatherCachePath = path.join(__dirname, '..', '..', 'Plugin', 'WeatherReporter', 'weather_cache.json');
+        const weatherCachePath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'WeatherReporter', 'weather_cache.json');
         try {
             const content = await fs.readFile(weatherCachePath, 'utf-8');
             res.json(JSON.parse(content));
@@ -162,7 +162,7 @@ module.exports = function(options) {
 
     // 获取每日热榜数据
     router.get('/dailyhot', async (req, res) => {
-        const dailyHotPath = path.join(__dirname, '..', '..', 'Plugin', 'DailyHot', 'dailyhot_cache.md');
+        const dailyHotPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'DailyHot', 'dailyhot_cache.md');
         try {
             const content = await fs.readFile(dailyHotPath, 'utf-8');
             const lines = content.split('\n');

@@ -1,4 +1,8 @@
 // server.js
+// Set project root early — __dirname is reliable in both source and bundle mode.
+// Modules in subdirectories should use VCP_ROOT instead of path.dirname(__dirname).
+process.env.VCP_ROOT = __dirname;
+
 const express = require('express');
 const dotenv = require('dotenv');
 dotenv.config({ path: 'config.env' });

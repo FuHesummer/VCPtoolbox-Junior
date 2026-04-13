@@ -7,7 +7,7 @@ module.exports = function(options) {
     const { dailyNoteRootPath, vectorDBManager } = options;
 
     router.get('/rag-tags', async (req, res) => {
-        const ragTagsPath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'rag_tags.json');
+        const ragTagsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'rag_tags.json');
         try {
             const content = await fs.readFile(ragTagsPath, 'utf-8');
             res.json(JSON.parse(content));
@@ -18,7 +18,7 @@ module.exports = function(options) {
     });
 
     router.post('/rag-tags', async (req, res) => {
-        const ragTagsPath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'rag_tags.json');
+        const ragTagsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'rag_tags.json');
         try {
             await fs.writeFile(ragTagsPath, JSON.stringify(req.body, null, 2), 'utf-8');
             res.json({ message: 'Saved' });
@@ -26,7 +26,7 @@ module.exports = function(options) {
     });
 
     router.get('/rag-params', async (req, res) => {
-        const ragParamsPath = path.join(__dirname, '..', '..', 'modules', 'rag_params.json');
+        const ragParamsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'modules', 'rag_params.json');
         try {
             const content = await fs.readFile(ragParamsPath, 'utf-8');
             res.json(JSON.parse(content));
@@ -34,7 +34,7 @@ module.exports = function(options) {
     });
 
     router.post('/rag-params', async (req, res) => {
-        const ragParamsPath = path.join(__dirname, '..', '..', 'modules', 'rag_params.json');
+        const ragParamsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'modules', 'rag_params.json');
         try {
             await fs.writeFile(ragParamsPath, JSON.stringify(req.body, null, 2), 'utf-8');
             res.json({ message: 'Saved' });
@@ -42,8 +42,8 @@ module.exports = function(options) {
     });
 
     router.get('/semantic-groups', async (req, res) => {
-        const editFilePath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'semantic_groups.edit.json');
-        const mainFilePath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'semantic_groups.json');
+        const editFilePath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'semantic_groups.edit.json');
+        const mainFilePath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'semantic_groups.json');
         try {
             const content = await fs.readFile(editFilePath, 'utf-8').catch(() => fs.readFile(mainFilePath, 'utf-8'));
             res.json(JSON.parse(content));
@@ -51,7 +51,7 @@ module.exports = function(options) {
     });
 
     router.post('/semantic-groups', async (req, res) => {
-        const editFilePath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'semantic_groups.edit.json');
+        const editFilePath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'semantic_groups.edit.json');
         try {
             await fs.writeFile(editFilePath, JSON.stringify(req.body, null, 2), 'utf-8');
             res.json({ message: 'Saved' });
@@ -59,7 +59,7 @@ module.exports = function(options) {
     });
 
     router.get('/thinking-chains', async (req, res) => {
-        const chainsPath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'meta_thinking_chains.json');
+        const chainsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'meta_thinking_chains.json');
         try {
             const content = await fs.readFile(chainsPath, 'utf-8');
             res.json(JSON.parse(content));
@@ -67,7 +67,7 @@ module.exports = function(options) {
     });
 
     router.post('/thinking-chains', async (req, res) => {
-        const chainsPath = path.join(__dirname, '..', '..', 'Plugin', 'RAGDiaryPlugin', 'meta_thinking_chains.json');
+        const chainsPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'RAGDiaryPlugin', 'meta_thinking_chains.json');
         try {
             await fs.writeFile(chainsPath, JSON.stringify(req.body, null, 2), 'utf-8');
             res.json({ message: 'Saved' });

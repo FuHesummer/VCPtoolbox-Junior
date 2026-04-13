@@ -4,7 +4,7 @@ const path = require('path');
 
 module.exports = function(options) {
     const router = express.Router();
-    const SCHEDULE_FILE = path.join(__dirname, '..', '..', 'Plugin', 'ScheduleManager', 'schedules.json');
+    const SCHEDULE_FILE = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'ScheduleManager', 'schedules.json');
 
     router.get('/schedules', async (req, res) => {
         try {

@@ -33,7 +33,7 @@ function loadHostsConfig() {
     // 配置文件搜索路径（优先级从高到低）
     const configPaths = [
         path.join(__dirname, 'hosts.json'),  // 共享模块目录
-        path.join(__dirname, '..', '..', 'Plugin', 'LinuxShellExecutor', 'hosts.json')  // LinuxShellExecutor 目录
+        path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'LinuxShellExecutor', 'hosts.json')  // LinuxShellExecutor 目录
     ];
     
     for (const configPath of configPaths) {
@@ -91,7 +91,7 @@ function loadSSHManagerClass() {
     // SSHManager 类文件搜索路径
     const classPaths = [
         path.join(__dirname, 'SSHManager.js'),  // 共享模块目录
-        path.join(__dirname, '..', '..', 'Plugin', 'LinuxShellExecutor', 'ssh', 'SSHManager.js')  // LinuxShellExecutor 目录
+        path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'LinuxShellExecutor', 'ssh', 'SSHManager.js')  // LinuxShellExecutor 目录
     ];
     
     for (const classPath of classPaths) {

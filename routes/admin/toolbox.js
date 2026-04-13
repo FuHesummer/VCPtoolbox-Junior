@@ -5,7 +5,7 @@ const path = require('path');
 module.exports = function(options) {
     const router = express.Router();
     const { tvsDirPath } = options;
-    const TOOLBOX_MAP_FILE = path.join(__dirname, '..', '..', 'modules', 'toolbox_map.json');
+    const TOOLBOX_MAP_FILE = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'modules', 'toolbox_map.json');
     const TVSTXT_DIR_PATH = tvsDirPath;
     const TOOLBOX_ALIAS_REGEX = /^[A-Za-z0-9_]+$/;
 

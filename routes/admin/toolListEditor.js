@@ -5,7 +5,7 @@ const path = require('path');
 module.exports = function(options) {
     const router = express.Router();
     const { pluginManager, tvsDirPath } = options;
-    const PROJECT_BASE_PATH = path.join(__dirname, '..', '..');
+    const PROJECT_BASE_PATH = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'));
     const TOOL_CONFIGS_DIR = path.join(PROJECT_BASE_PATH, 'ToolConfigs');
 
     // 确保ToolConfigs目录存在

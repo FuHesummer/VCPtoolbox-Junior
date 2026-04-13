@@ -6,7 +6,7 @@ module.exports = function(options) {
     const router = express.Router();
     const { agentDirPath, DEBUG_MODE } = options;
     const AGENT_FILES_DIR = agentDirPath;
-    const AGENT_MAP_FILE = path.join(__dirname, '..', '..', 'agent_map.json');
+    const AGENT_MAP_FILE = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'agent_map.json');
 
     // 确保 agentManager 单例在当前进程中已正确配置
     // 在独立 adminServer 进程中，agentManager.initialize() 不会被主服务调用，
