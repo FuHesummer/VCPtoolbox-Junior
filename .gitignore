@@ -4,8 +4,8 @@ logs
 npm-debug.log*
 yarn-debug.log*
 
-# AdminPanel (auto-downloaded from GitHub Releases)
-AdminPanel/
+# AdminPanel — now tracked in repo (custom UI)
+# AdminPanel/
 
 # Build output
 dist/

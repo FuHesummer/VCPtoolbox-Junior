@@ -17,10 +17,12 @@ const DEFAULT_REPO = 'FuHesummer/VCPtoolbox-Junior-Plugins';
 const REPO = process.env.PLUGIN_STORE_REPO || DEFAULT_REPO;
 const PLUGIN_DIR = path.join(__dirname, '..', 'Plugin');
 const STORE_CACHE_FILE = path.join(PLUGIN_DIR, '.store-cache.json');
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
+const STALE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h stale fallback on error
 
 /**
- * Get remote plugin list from GitHub repo
+ * Get remote plugin list from GitHub repo.
+ * Uses Git Tree API to fetch all manifests in a single call (saves API quota).
  * @returns {Promise<Array>} List of available plugins with metadata
  */
 async function listRemote() {
@@ -28,38 +30,68 @@ async function listRemote() {
     const cached = await readCache();
     if (cached) return cached;
 
-    const contents = await githubApi(`/repos/${REPO}/contents`);
-    if (!Array.isArray(contents)) {
-        throw new Error('Failed to fetch plugin list from remote');
-    }
-
-    const plugins = [];
-    for (const item of contents) {
-        if (item.type !== 'dir') continue;
-        if (item.name === '.github' || item.name.startsWith('.')) continue;
-
-        // Try to fetch manifest
-        let manifest = null;
-        try {
-            manifest = await fetchManifest(item.name);
-        } catch {
-            // No manifest, skip
-            continue;
+    try {
+        // Single API call: get entire repo tree
+        const tree = await githubApi(`/repos/${REPO}/git/trees/main?recursive=1`);
+        if (!tree || !tree.tree) {
+            throw new Error('Failed to fetch repo tree');
         }
 
-        plugins.push({
-            name: item.name,
-            displayName: manifest.displayName || item.name,
-            version: manifest.version || '0.0.0',
-            description: manifest.description || '',
-            pluginType: manifest.pluginType || 'unknown',
-            sha: item.sha
-        });
-    }
+        // Find all manifest files: <PluginName>/plugin-manifest.json(.block)
+        const manifestFiles = tree.tree.filter(f =>
+            f.type === 'blob' &&
+            /^[^/]+\/plugin-manifest\.json(\.block)?$/.test(f.path) &&
+            !f.path.startsWith('.')
+        );
 
-    // Save cache
-    await writeCache(plugins);
-    return plugins;
+        // Deduplicate: prefer active manifest over .block
+        const pluginManifests = new Map();
+        for (const f of manifestFiles) {
+            const pluginName = f.path.split('/')[0];
+            const isBlocked = f.path.endsWith('.block');
+            if (!pluginManifests.has(pluginName) || !isBlocked) {
+                pluginManifests.set(pluginName, f);
+            }
+        }
+
+        // Fetch manifest contents in parallel (blob API, still within tree data)
+        const plugins = [];
+        const batchSize = 5;
+        const entries = Array.from(pluginManifests.entries());
+
+        for (let i = 0; i < entries.length; i += batchSize) {
+            const batch = entries.slice(i, i + batchSize);
+            const results = await Promise.allSettled(
+                batch.map(async ([pluginName, file]) => {
+                    const blob = await githubApi(`/repos/${REPO}/git/blobs/${file.sha}`);
+                    const manifest = JSON.parse(Buffer.from(blob.content, 'base64').toString('utf-8'));
+                    return {
+                        name: pluginName,
+                        displayName: manifest.displayName || manifest.name || pluginName,
+                        version: manifest.version || '0.0.0',
+                        description: manifest.description || '',
+                        pluginType: manifest.pluginType || 'unknown',
+                        sha: file.sha
+                    };
+                })
+            );
+            for (const r of results) {
+                if (r.status === 'fulfilled') plugins.push(r.value);
+            }
+        }
+
+        // Save cache
+        await writeCache(plugins);
+        return plugins;
+    } catch (err) {
+        // On error (403 rate limit, network issue): try stale cache
+        const stale = await readCache(true);
+        if (stale) {
+            console.warn(`[PluginStore] GitHub API failed (${err.message}), using stale cache`);
+            return stale;
+        }
+        throw err;
+    }
 }
 
 /**
@@ -599,10 +631,15 @@ function collectBody(res) {
     });
 }
 
-async function readCache() {
+async function readCache(allowStale = false) {
     try {
         const data = JSON.parse(await fs.readFile(STORE_CACHE_FILE, 'utf-8'));
-        if (Date.now() - data.timestamp < CACHE_TTL) {
+        const age = Date.now() - data.timestamp;
+        if (age < CACHE_TTL) {
+            return data.plugins;
+        }
+        // Return stale cache if allowed and within stale TTL
+        if (allowStale && age < STALE_CACHE_TTL) {
             return data.plugins;
         }
     } catch { /* no cache */ }
