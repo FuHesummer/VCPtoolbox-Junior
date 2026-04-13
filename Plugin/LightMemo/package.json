@@ -1,0 +1,9 @@
+{
+  "name": "vcptoolbox-plugin-lightmemo",
+  "private": true,
+  "dependencies": {
+    "@node-rs/jieba": "^2.0.1",
+    "axios": "^1.6.0",
+    "dotenv": "^16.5.0"
+  }
+}

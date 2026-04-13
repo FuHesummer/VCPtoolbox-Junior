@@ -1,0 +1,13 @@
+{
+  "name": "vcptoolbox-plugin-ragdiaryplugin",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.6.0",
+    "better-sqlite3": "^12.4.1",
+    "cheerio": "^1.1.2",
+    "chokidar": "^3.5.3",
+    "dayjs": "^1.11.0",
+    "dotenv": "^16.5.0",
+    "mime-types": "^3.0.1"
+  }
+}

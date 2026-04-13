@@ -8,6 +8,7 @@
 Plugin/<PluginName>/
 ├── plugin-manifest.json          # 插件契约（启用状态）
 ├── plugin-manifest.json.block    # 插件契约（禁用状态，二选一）
+├── package.json                  # npm 依赖声明（有第三方依赖时必须）
 ├── <entryPoint script>           # 入口文件
 ├── config.env                    # 运行时配置（可选，key=value 格式）
 ├── admin/                        # 自定义管理界面（可选）
@@ -15,6 +16,37 @@ Plugin/<PluginName>/
 │   └── *.js / *.css              # 管理页面静态资源
 └── ...                           # 其他插件文件
 ```
+
+## npm 依赖管理（package.json）
+
+**规则：插件使用了任何第三方 npm 包，必须在插件目录下创建 `package.json` 声明依赖。**
+
+插件加载器在 `require()` 入口脚本前会自动检测：如果存在 `package.json` 但没有 `node_modules/`，自动执行 `npm install --production`。插件商店安装/更新时也会自动触发。
+
+### 示例 package.json
+
+```json
+{
+  "name": "vcptoolbox-plugin-myplugin",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dayjs": "^1.11.0"
+  }
+}
+```
+
+### 要点
+
+- `"private": true` 防止意外发布
+- 只声明插件**直接使用**的包，不需要列出 Node.js 内置模块（fs, path, crypto 等）
+- 版本号使用 `^` 前缀，允许小版本更新
+- **不要提交 `node_modules/`**（已在 .gitignore 中排除）
+- 如果插件只使用 Node.js 内置模块，不需要创建 package.json
+
+### 为什么必须这样做
+
+VCPToolBox 支持多种打包模式（SEA 单可执行文件、Docker 等），核心代码会被 esbuild 打包成单个 bundle。插件是运行时动态加载的，无法访问 bundle 内部的包。只有通过 `package.json` 声明并安装到插件自己的 `node_modules/` 中，依赖才能正确解析。
 
 ## manifest 字段规范
 
