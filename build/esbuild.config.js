@@ -24,6 +24,24 @@ const NATIVE_EXTERNALS = [
     'node-fetch',
 ];
 
+// SEA compatibility banner:
+// In SEA mode, the built-in `require` (embedderRequire) can only load
+// Node.js built-in modules. External npm packages like better-sqlite3
+// need Module.createRequire() to resolve from node_modules/.
+// This banner patches `require` so externals work in both normal and SEA mode.
+const SEA_REQUIRE_BANNER = [
+    '// SEA require patch — enables node_modules resolution in embedded mode',
+    ';var _seaM=require("module");',
+    'if(_seaM.createRequire){',
+    '  var _seaOrig=require,',
+    '      _seaCR=_seaM.createRequire(__filename||process.execPath);',
+    '  require=function(id){',
+    '    try{return _seaOrig(id)}',
+    '    catch(e){if(e.code==="ERR_UNKNOWN_BUILTIN_MODULE")return _seaCR(id);throw e}',
+    '  };',
+    '}',
+].join('');
+
 const SHARED_OPTIONS = {
     bundle: true,
     platform: 'node',
@@ -60,7 +78,7 @@ async function build() {
         ...SHARED_OPTIONS,
         entryPoints: [entryFile],
         outfile: path.join(DIST, 'vcp.bundle.js'),
-        banner: { js: '// VCPtoolbox-Junior combined bundle (server + admin)' },
+        banner: { js: SEA_REQUIRE_BANNER },
     });
 
     // Cleanup temp entry
