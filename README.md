@@ -50,71 +50,67 @@ VCPtoolbox-Junior 是 VCPToolBox 的解耦分支，保留了 VCP 的全部核心
 |------|------|
 | Windows x64 | `vcp-junior-win32-x64.zip` |
 | Linux x64 | `vcp-junior-linux-x64.tar.gz` |
-| Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` |
 | macOS ARM64 (M系列) | `vcp-junior-darwin-arm64.tar.gz` |
 
 ```bash
 # 解压后
-# Windows: 双击 VCPtoolbox-Junior.bat
-# Linux/Mac:
-chmod +x vcp-junior
-./vcp-junior
+# Windows: 直接运行 VCPtoolbox.exe
+# Linux/macOS:
+chmod +x VCPtoolbox
+./VCPtoolbox
 ```
 
-首次运行会自动创建 `config.env`（从 example 复制）并下载管理面板。编辑 `app/config.env` 填入你的 API 密钥即可。
+首次运行会自动创建 `config.env`（从 example 复制）。编辑 `config.env` 填入你的 API 密钥即可。
 
-### 方式二：从源码构建
+主服务 (端口 6005) + 管理面板 (端口 6006) 同时启动，打开 `http://localhost:6006/AdminPanel/` 进入管理面板。
 
-**环境要求**：
-- Node.js 22+
-- Rust toolchain (stable)
-- npm
+### 方式二：Docker
 
 ```bash
-# 克隆
+# 使用 docker-compose
+docker-compose up --build -d
+
+# 或直接拉取镜像
+docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
+docker run -d -p 6005:6005 -p 6006:6006 \
+  -v ./config.env:/usr/src/app/config.env \
+  ghcr.io/fuhesummer/vcptoolbox-junior:latest
+```
+
+### 方式三：从源码运行
+
+**环境要求**：Node.js 22+、Rust toolchain (stable)
+
+```bash
 git clone https://github.com/FuHesummer/VCPtoolbox-Junior.git
 cd VCPtoolbox-Junior
 
-# 安装 Node 依赖
+# 安装依赖
 npm install
-
-# 构建 Rust 向量引擎
-cd rust-vexus-lite
-npm install
-npm run build
-cd ..
+cd rust-vexus-lite && npm install && npm run build && cd ..
 
 # 配置
 cp config.env.example config.env
-# 编辑 config.env，填入你的 API 密钥
+# 编辑 config.env，填入 API 密钥
 
-# 启动（两种方式）
-# A. 统一启动（主服务 + 管理面板）
-node build/launcher.js
-
-# B. 分别启动
-node server.js          # 主服务（默认端口 6005）
-node adminServer.js     # 管理面板（端口 6006，自动下载前端资源）
-```
-
-### 方式三：Docker
-
-```bash
-docker-compose up --build -d
+# 启动
+node server.js          # 主服务（端口 6005）
+node adminServer.js     # 管理面板（端口 6006，另开终端）
 ```
 
 ### 本地打包
 
-如果你想自己构建分发包：
-
 ```bash
-# 打包当前平台
-node build/package.js
+# esbuild 打包
+npm run bundle
 
-# 指定平台打包
-node build/package.js linux x64
-node build/package.js darwin arm64
-node build/package.js win32 x64
+# SEA 单可执行文件打包（当前平台）
+node build/package-sea.js
+
+# 指定平台
+node build/package-sea.js linux x64
+node build/package-sea.js darwin arm64
+node build/package-sea.js win32 x64
 
 # 产物在 dist/ 目录
 ```
