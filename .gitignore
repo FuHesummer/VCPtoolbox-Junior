@@ -213,3 +213,7 @@ rust-vexus-lite/target/
 VCPDistributedServer
 # XiaohongshuFetch config
 Plugin/XiaohongshuFetch/config.env
+
+# Runtime generated files
+Plugin/.store-cache.json
+Plugin/*/code.bin
