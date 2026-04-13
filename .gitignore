@@ -152,7 +152,7 @@ config.env.local
 
 # 有 .example 对应的运行时配置
 ModelRedirect.json
-agent_map.json
+# agent_map.json — tracked with default Agent presets
 preprocessor_order.json
 tag-processor-config.env
 
