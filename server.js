@@ -1285,10 +1285,14 @@ async function startServer() {
     // 🌟 关键修复：在监听端口前完成所有初始化
     await initialize(); // This loads plugins and initializes services
 
-    // 🌟 核心网络优化：100% 确保首请求的 node-fetch ESM 模块热启动，消除冷启动导致的延迟和上游挂断风险
-    console.log('[Server] 正在预热 node-fetch ESM 模块...');
-    await import('node-fetch');
-    console.log('[Server] node-fetch 模块预热完毕，准备处理请求。');
+    // 预热 node-fetch — try/catch 防止 SEA/bundled 模式下失败导致服务器无法启动
+    console.log('[Server] 正在预热 node-fetch 模块...');
+    try {
+        await import('node-fetch');
+        console.log('[Server] node-fetch 模块预热完毕。');
+    } catch (e) {
+        console.warn('[Server] node-fetch 预热跳过:', e.message);
+    }
 
     server = app.listen(port, () => {
         console.log(`中间层服务器正在监听端口 ${port}`);
