@@ -24,6 +24,7 @@ const NATIVE_EXTERNALS = [
     'fsevents',
     'node-fetch',
     '@dqbd/tiktoken',  // loads tiktoken_bg.wasm via __dirname
+    'pm2',             // optional deps (term.js, pty.js) break esbuild
 ];
 
 /**
