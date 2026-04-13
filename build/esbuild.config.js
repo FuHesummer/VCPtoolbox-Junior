@@ -85,14 +85,29 @@ async function build() {
         '}, 3000);',
     ].join('\n'));
 
+    // SEA dynamic require patch:
+    // esbuild plugin handles static requires (e.g. require("better-sqlite3")).
+    // But dynamic requires with variable paths (e.g. require(modulePath) in
+    // Plugin.js and adminPanelRoutes.js) are left as-is by esbuild. In SEA
+    // mode these hit embedderRequire which only handles builtins.
+    // This banner patches require to fallback to createRequire for those.
+    const SEA_BANNER = [
+        ';(function(){',
+        'var _M=require("module");',
+        'if(_M.createRequire){',
+        'var _O=require,_C=_M.createRequire(__filename||process.execPath);',
+        'require=function(i){try{return _O(i)}catch(e){',
+        'if(e.code==="ERR_UNKNOWN_BUILTIN_MODULE")return _C(i);throw e}};',
+        '}',
+        '})();',
+    ].join('');
+
     console.log('📦 Bundling server + admin into single bundle...');
     await esbuild.build({
         bundle: true,
         platform: 'node',
         target: 'node20',
         format: 'cjs',
-        // No 'external' needed — seaNativePlugin handles native modules
-        // and esbuild auto-externalizes Node.js built-ins in platform:node
         external: [],
         plugins: [seaNativePlugin],
         sourcemap: false,
@@ -101,6 +116,7 @@ async function build() {
         logLevel: 'info',
         entryPoints: [entryFile],
         outfile: path.join(DIST, 'vcp.bundle.js'),
+        banner: { js: SEA_BANNER },
     });
 
     // Cleanup temp entry

@@ -75,30 +75,11 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # --- Copy esbuild bundle ---
 COPY --from=build /usr/src/app/dist/vcp.bundle.js ./dist/
 
-# --- Copy native .node modules (not bundleable) ---
-# better-sqlite3
-COPY --from=build /usr/src/app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
-# hnswlib-node
-COPY --from=build /usr/src/app/node_modules/hnswlib-node ./node_modules/hnswlib-node
-# @node-rs/jieba
-COPY --from=build /usr/src/app/node_modules/@node-rs ./node_modules/@node-rs
-# @napi-rs/canvas (if present)
-COPY --from=build /usr/src/app/node_modules/@napi-rs ./node_modules/@napi-rs
-# @dqbd/tiktoken (WASM dependency)
-COPY --from=build /usr/src/app/node_modules/@dqbd ./node_modules/@dqbd
+# --- Copy full node_modules (plugins need runtime module resolution) ---
+COPY --from=build /usr/src/app/node_modules ./node_modules
 
-# rust-vexus-lite
-COPY --from=build /usr/src/app/rust-vexus-lite/index.js ./rust-vexus-lite/index.js
-COPY --from=build /usr/src/app/rust-vexus-lite/package.json ./rust-vexus-lite/package.json
-COPY --from=build /usr/src/app/rust-vexus-lite/*.node ./rust-vexus-lite/
-
-# node-fetch (ESM, cannot be bundled)
-COPY --from=build /usr/src/app/node_modules/node-fetch ./node_modules/node-fetch
-COPY --from=build /usr/src/app/node_modules/data-uri-to-buffer ./node_modules/data-uri-to-buffer
-COPY --from=build /usr/src/app/node_modules/fetch-blob ./node_modules/fetch-blob
-COPY --from=build /usr/src/app/node_modules/formdata-polyfill ./node_modules/formdata-polyfill
-COPY --from=build /usr/src/app/node_modules/node-domexception ./node_modules/node-domexception
-COPY --from=build /usr/src/app/node_modules/web-streams-polyfill ./node_modules/web-streams-polyfill
+# rust-vexus-lite (full directory — includes compiled .node + JS loader)
+COPY --from=build /usr/src/app/rust-vexus-lite ./rust-vexus-lite
 
 # --- Copy Python dependencies ---
 COPY --from=build /usr/src/app/pydeps ./pydeps
