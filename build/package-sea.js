@@ -26,12 +26,13 @@ const arch = process.argv[3] || process.arch;
 
 const EXE_NAME = platform === 'win32' ? 'VCPtoolbox.exe' : 'VCPtoolbox';
 
-// External modules: native binaries + ESM packages not bundleable
+// External modules: native binaries, WASM, ESM packages
 const NATIVE_MODULES = [
     'better-sqlite3',
     'hnswlib-node',
     '@node-rs/jieba',
     '@napi-rs/canvas',
+    '@dqbd/tiktoken',   // WASM dependency (tiktoken_bg.wasm)
     // node-fetch is ESM-only, cannot be bundled into CJS
     'node-fetch',
     'data-uri-to-buffer',

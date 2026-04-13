@@ -84,6 +84,8 @@ COPY --from=build /usr/src/app/node_modules/hnswlib-node ./node_modules/hnswlib-
 COPY --from=build /usr/src/app/node_modules/@node-rs ./node_modules/@node-rs
 # @napi-rs/canvas (if present)
 COPY --from=build /usr/src/app/node_modules/@napi-rs ./node_modules/@napi-rs
+# @dqbd/tiktoken (WASM dependency)
+COPY --from=build /usr/src/app/node_modules/@dqbd ./node_modules/@dqbd
 
 # rust-vexus-lite
 COPY --from=build /usr/src/app/rust-vexus-lite/index.js ./rust-vexus-lite/index.js

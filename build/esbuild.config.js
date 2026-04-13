@@ -14,7 +14,7 @@ const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 
-// Native modules that cannot be bundled (contain .node binaries)
+// Modules that cannot be bundled — native binaries, WASM, or ESM-only
 // These are resolved at runtime via Module.createRequire() for SEA compatibility
 const NATIVE_EXTERNALS = [
     'better-sqlite3',
@@ -23,6 +23,7 @@ const NATIVE_EXTERNALS = [
     '@napi-rs/canvas',
     'fsevents',
     'node-fetch',
+    '@dqbd/tiktoken',  // loads tiktoken_bg.wasm via __dirname
 ];
 
 /**
