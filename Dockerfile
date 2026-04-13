@@ -72,8 +72,8 @@ RUN apk add --no-cache \
 ENV PYTHONPATH=/usr/src/app/pydeps
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# --- Copy esbuild bundle ---
-COPY --from=build /usr/src/app/dist/vcp.bundle.js ./dist/
+# --- Copy esbuild bundle (to root, so __filename-relative paths resolve correctly) ---
+COPY --from=build /usr/src/app/dist/vcp.bundle.js ./vcp.bundle.js
 
 # --- Copy full node_modules (plugins need runtime module resolution) ---
 COPY --from=build /usr/src/app/node_modules ./node_modules
@@ -111,4 +111,4 @@ RUN mkdir -p knowledge thinking VCPTimedContacts dailynote \
 EXPOSE 6005 6006
 
 # Run the combined bundle (server + admin in one process)
-CMD ["node", "dist/vcp.bundle.js"]
+CMD ["node", "vcp.bundle.js"]

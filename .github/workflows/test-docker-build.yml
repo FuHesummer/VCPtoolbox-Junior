@@ -45,7 +45,7 @@ jobs:
 
           echo ""
           echo "=== Bundle check ==="
-          docker run --rm vcptoolbox:test ls -lh dist/vcp.bundle.js
+          docker run --rm vcptoolbox:test ls -lh vcp.bundle.js
 
           echo ""
           echo "=== Native modules ==="

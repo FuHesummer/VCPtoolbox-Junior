@@ -32,41 +32,33 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
         triggerRestart
     };
 
-    /**
-     * Helper to mount a module's router
-     * @param {string} mountPath - The base path for this module
-     * @param {string} moduleName - The filename in ./admin/
-     */
-    const mount = (mountPath, moduleName) => {
-        try {
-            const modulePath = path.join(__dirname, 'admin', `${moduleName}.js`);
-            const routeHandler = require(modulePath)(options);
-            adminApiRouter.use(mountPath, routeHandler);
-        } catch (error) {
-            console.error(`[AdminPanelRoutes] Failed to load module "${moduleName}" at "${mountPath}":`, error);
-        }
+    // Static requires — esbuild needs string literals to bundle these modules.
+    // DO NOT convert back to dynamic require(path.join(...)) — breaks SEA/bundling.
+    const adminModules = {
+        system:         require('./admin/system'),
+        logs:           require('./admin/logs'),
+        config:         require('./admin/config'),
+        plugins:        require('./admin/plugins'),
+        server:         require('./admin/server'),
+        toolbox:        require('./admin/toolbox'),
+        agents:         require('./admin/agents'),
+        tvs:            require('./admin/tvs'),
+        placeholders:   require('./admin/placeholders'),
+        schedules:      require('./admin/schedules'),
+        rag:            require('./admin/rag'),
+        toolListEditor: require('./admin/toolListEditor'),
+        pluginStore:    require('./admin/pluginStore'),
+        dailyNotes:     require('./admin/dailyNotes'),
     };
 
-    // =========================================================================
-    // Mounting Modules
-    // Use flat mounting ('/') for most modules to maintain backward compatibility
-    // with original route names that already include their own prefixes.
-    // =========================================================================
-
-    mount('/', 'system');             // Handles /system-monitor/*, /user-auth-code, /weather
-    mount('/', 'logs');               // Handles /logs/*
-    mount('/', 'config');             // Handles /tool-approval-config, /config/main
-    mount('/', 'plugins');            // Handles /plugins/*, /preprocessors/*
-    mount('/', 'server');             // Handles /verify-login, /logout, /check-auth, /server/restart
-    mount('/', 'toolbox');            // Handles /toolbox/*
-    mount('/', 'agents');             // Handles /agents/*
-    mount('/', 'tvs');                // Handles /tvsvars/*
-    mount('/', 'placeholders');       // Handles /placeholders
-    mount('/', 'schedules');          // Handles /schedules/*
-    mount('/', 'rag');                // Handles /rag-tags, /rag-params, /available-clusters, etc.
-    mount('/', 'toolListEditor');     // Handles /tool-list/*
-    mount('/', 'pluginStore');        // Handles /plugin-store/*
-    mount('/', 'dailyNotes');         // Wrapper for existing dailyNotesRoutes (Handles /dailynotes/*)
+    for (const [moduleName, moduleFactory] of Object.entries(adminModules)) {
+        try {
+            const routeHandler = moduleFactory(options);
+            adminApiRouter.use('/', routeHandler);
+        } catch (error) {
+            console.error(`[AdminPanelRoutes] Failed to load module "${moduleName}":`, error);
+        }
+    }
 
     return adminApiRouter;
 };
