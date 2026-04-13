@@ -1354,8 +1354,8 @@ async function gracefulShutdown(exitCode = 0) {
     process.exit(exitCode);
 }
 
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', () => gracefulShutdown(0));
+process.on('SIGTERM', () => gracefulShutdown(0));
 
 // 新增：捕获未处理的异常，防止服务器崩溃
 process.on('uncaughtException', (error) => {

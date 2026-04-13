@@ -53,6 +53,7 @@ const USER_DIRS = [
     'image',
     'scripts',
     'python',
+    'VCPTimedContacts',
     // Core modules/routes must exist on disk — plugins require them at runtime
     // e.g. RAGDiaryPlugin requires ../../modules/TextChunker.js
     'modules',
