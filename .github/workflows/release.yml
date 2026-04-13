@@ -1,4 +1,4 @@
-name: Build & Release
+name: Release
 
 on:
   push:
@@ -7,11 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v0.2.0)'
+        description: 'Release version (e.g. v1.0.0)'
         required: true
 
 permissions:
   contents: write
+  packages: write
 
 env:
   NODE_VERSION: '22'
@@ -20,34 +21,24 @@ env:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             platform: win32
             arch: x64
-            artifact: vcp-junior-win32-x64.zip
-            extract_cmd: powershell -Command "Expand-Archive -Path dist/vcp-junior-win32-x64.zip -DestinationPath test-run/"
-            launcher: test-run/runtime/node-v22.16.0-win-x64/node.exe test-run/app/build/launcher.js
+            exe: VCPtoolbox.exe
           - os: ubuntu-latest
             platform: linux
             arch: x64
-            artifact: vcp-junior-linux-x64.tar.gz
-            extract_cmd: mkdir -p test-run && tar -xzf dist/vcp-junior-linux-x64.tar.gz -C test-run --strip-components=1
-            launcher: test-run/vcp-junior
-          - os: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-            artifact: vcp-junior-linux-arm64.tar.gz
-            extract_cmd: mkdir -p test-run && tar -xzf dist/vcp-junior-linux-arm64.tar.gz -C test-run --strip-components=1
-            launcher: test-run/vcp-junior
+            exe: VCPtoolbox
           - os: macos-latest
             platform: darwin
             arch: arm64
-            artifact: vcp-junior-darwin-arm64.tar.gz
-            extract_cmd: mkdir -p test-run && tar -xzf dist/vcp-junior-darwin-arm64.tar.gz -C test-run --strip-components=1
-            launcher: test-run/vcp-junior
+            exe: VCPtoolbox
 
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -68,112 +59,69 @@ jobs:
           npm install
           npm run build
 
-      - name: Run package script
-        run: node build/package.js ${{ matrix.platform }} ${{ matrix.arch }}
+      - name: Bundle with esbuild
+        run: npm run bundle
 
-      - name: List dist output
-        run: ls -la dist/
-        shell: bash
+      - name: Build SEA package
+        run: node build/package-sea.js ${{ matrix.platform }} ${{ matrix.arch }}
 
-      # ===== Smoke Test =====
-      - name: Extract package for testing
-        run: ${{ matrix.extract_cmd }}
-        shell: bash
-
-      - name: Smoke test - verify structure
+      - name: Smoke test
         shell: bash
         run: |
-          echo "=== Checking package structure ==="
-          if [ "${{ matrix.platform }}" = "win32" ]; then
-            test -f test-run/VCPtoolbox-Junior.bat && echo "✅ Launcher script exists"
-            test -f test-run/app/server.js && echo "✅ server.js exists"
-            test -f test-run/app/adminServer.js && echo "✅ adminServer.js exists"
-            test -f test-run/app/build/launcher.js && echo "✅ launcher.js exists"
-            test -d test-run/runtime && echo "✅ Node runtime exists"
-            test -f test-run/app/rust-vexus-lite/vexus-lite.*.node && echo "✅ Native module exists" || echo "⚠️ Checking .node file..."
-            find test-run/app/rust-vexus-lite -name "*.node" | head -1 | xargs -I{} echo "✅ Native module: {}"
+          PKG="dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}"
+          EXE="$PKG/${{ matrix.exe }}"
+          chmod +x "$EXE" 2>/dev/null || true
+
+          cd "$PKG"
+          printf '%s\n' \
+            "API_Key=test-key" \
+            "API_URL=http://localhost:3000" \
+            "PORT=19999" \
+            "Key=testkey" \
+            "AdminUsername=test" \
+            "AdminPassword=test" \
+            "EMBEDDING_API_KEY=test" \
+            "EMBEDDING_API_URL=http://localhost" \
+            "EMBEDDING_MODEL_NAME=test" \
+            "VECTORDB_DIMENSION=3072" \
+            "DebugMode=false" \
+            "PANEL_RELEASE_URL=disabled" \
+            "KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false" \
+            > config.env
+
+          "./${{ matrix.exe }}" > startup.log 2>&1 &
+          PID=$!
+          sleep 12
+          kill $PID 2>/dev/null || true
+          sleep 1
+          kill -9 $PID 2>/dev/null || true
+
+          if grep -q "监听端口\|listening\|Plugin discovery\|正在监听" startup.log; then
+            echo "✅ Smoke test passed"
           else
-            test -f test-run/vcp-junior && echo "✅ Launcher script exists"
-            test -f test-run/app/server.js && echo "✅ server.js exists"
-            test -f test-run/app/adminServer.js && echo "✅ adminServer.js exists"
-            test -f test-run/app/build/launcher.js && echo "✅ launcher.js exists"
-            test -d test-run/runtime && echo "✅ Node runtime exists"
-            find test-run/app/rust-vexus-lite -name "*.node" | head -1 | xargs -I{} echo "✅ Native module: {}"
+            echo "❌ Startup failed"
+            cat startup.log
+            exit 1
           fi
-
-      - name: Smoke test - startup test
-        shell: bash
-        run: |
-          echo "=== Running startup test (10s timeout) ==="
-          if [ "${{ matrix.platform }}" = "win32" ]; then
-            NODE="test-run/runtime/node-v22.16.0-win-x64/node.exe"
-          else
-            NODE="test-run/runtime/bin/node"
-            chmod +x "$NODE"
-          fi
-
-          # Test 1: Verify native module loads
-          "$NODE" -e "
-            process.chdir('test-run/app');
-            try {
-              require('./rust-vexus-lite');
-              console.log('✅ rust-vexus-lite native module loads OK');
-            } catch(e) {
-              console.error('❌ Native module failed:', e.message);
-              process.exit(1);
-            }
-          "
-
-          # Test 2: Verify core modules load
-          "$NODE" -e "
-            process.chdir('test-run/app');
-            process.env.PORT = '19999';
-            process.env.AdminUsername = 'test';
-            process.env.AdminPassword = 'test';
-            process.env.API_KEY = 'test';
-            process.env.BASE_URL = 'http://localhost';
-            process.env.MODEL_NAME = 'test';
-            process.env.EMBEDDING_API_KEY = 'test';
-            process.env.EMBEDDING_API_URL = 'http://localhost';
-            process.env.EMBEDDING_MODEL_NAME = 'test';
-            try {
-              require('./Plugin.js');
-              console.log('✅ Plugin.js loads');
-              require('./modules/KnowledgeBaseManager.js');
-              console.log('✅ KnowledgeBaseManager loads');
-              require('./modules/TagMemoEngine.js');
-              console.log('✅ TagMemoEngine loads');
-              require('./modules/WebSocketServer.js');
-              console.log('✅ WebSocketServer loads');
-              console.log('✅ All core modules loaded successfully');
-              process.exit(0);
-            } catch(e) {
-              console.error('❌ Module load failed:', e.message);
-              process.exit(1);
-            }
-          "
-
-          echo "✅ All smoke tests passed (native module + core modules)"
+          cd -
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}.*
           if-no-files-found: error
 
   release:
     needs: build
-    runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: List downloaded artifacts
-        run: find artifacts -type f | sort
 
       - name: Determine version
         id: version
@@ -189,32 +137,71 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "VCPtoolbox-Junior ${{ steps.version.outputs.tag }}"
+          generate_release_notes: true
           body: |
-            ## VCPtoolbox-Junior ${{ steps.version.outputs.tag }}
-
-            ### 下载
+            ## 下载
 
             | 平台 | 文件 | 说明 |
             |------|------|------|
-            | Windows x64 | `vcp-junior-win32-x64.zip` | 解压后双击 `VCPtoolbox-Junior.bat` |
-            | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x vcp-junior && ./vcp-junior` |
-            | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` | 同上 |
-            | macOS ARM64 (M系列) | `vcp-junior-darwin-arm64.tar.gz` | 解压后 `chmod +x vcp-junior && ./vcp-junior` |
+            | Windows x64 | `vcp-junior-win32-x64.zip` | 解压后运行 `VCPtoolbox.exe` |
+            | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x VCPtoolbox && ./VCPtoolbox` |
+            | macOS ARM64 | `vcp-junior-darwin-arm64.tar.gz` | 同上 |
+            | Docker | `ghcr.io` | 见下方 Docker 部署 |
 
-            ### 首次使用
+            ## 首次使用
 
             1. 解压下载的包
-            2. 编辑 `app/config.env.example` → 重命名为 `app/config.env`，填入你的 API 密钥
-            3. 启动：一键启动会同时运行主服务（端口 6005）和管理面板（端口 6006）
-            4. 管理面板首次启动时自动从 GitHub 下载前端资源
+            2. 复制 `config.env.example` → `config.env`，填入 API 密钥
+            3. 运行可执行文件，主服务 (6005) + 管理面板 (6006) 同时启动
+            4. 打开 `http://localhost:6006/AdminPanel/` 进入管理面板
 
-            ### 验证信息
+            ## Docker 部署
 
-            本次发布的所有平台包已通过 CI 冒烟测试：
-            - ✅ Rust 原生向量引擎加载成功
-            - ✅ 核心模块（Plugin/KnowledgeBase/TagMemo/WebSocket）加载成功
-            - ✅ 服务器启动并保持运行 8 秒无崩溃
+            ```bash
+            docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
+            docker run -d -p 6005:6005 -p 6006:6006 \
+              -v ./config.env:/usr/src/app/config.env \
+              ghcr.io/fuhesummer/vcptoolbox-junior:latest
+            ```
           draft: false
           prerelease: false
           files: |
             artifacts/**/*
+
+  docker:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/vcptoolbox-junior:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/vcptoolbox-junior:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
