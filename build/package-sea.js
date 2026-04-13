@@ -53,6 +53,10 @@ const USER_DIRS = [
     'image',
     'scripts',
     'python',
+    // Core modules/routes must exist on disk — plugins require them at runtime
+    // e.g. RAGDiaryPlugin requires ../../modules/TextChunker.js
+    'modules',
+    'routes',
 ];
 
 const USER_FILES = [
@@ -259,9 +263,10 @@ async function copyNativeModule(moduleName, destNodeModules) {
     if (!fs.existsSync(srcDir)) return;
 
     const destDir = path.join(destNodeModules, moduleName);
-    // Copy the entire module, excluding build artifacts and dev files
+    // Copy the entire module, excluding dev files only
+    // NOTE: do NOT exclude 'src' — many packages (node-fetch) have their code there
     await copyRecursive(srcDir, destDir, [
-        'src', '.github', 'test', 'tests', 'docs', 'example', 'examples',
+        '.github', 'test', 'tests', 'docs', 'example', 'examples',
         'benchmark', '.eslintrc', '.prettierrc', 'CHANGELOG', 'CONTRIBUTING',
         '.travis.yml', 'appveyor.yml', 'binding.gyp', 'Makefile',
     ]);
@@ -276,7 +281,7 @@ async function copyNativeModule(moduleName, destNodeModules) {
                 if (fs.statSync(entryDir).isDirectory() && hasNodeFile(entryDir)) {
                     const destEntry = path.join(destNodeModules, scope, entry);
                     await copyRecursive(entryDir, destEntry, [
-                        'src', '.github', 'test', 'tests', 'docs',
+                        '.github', 'test', 'tests', 'docs',
                     ]);
                 }
             }
