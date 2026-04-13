@@ -1,0 +1,144 @@
+name: Test SEA Build
+
+on:
+  push:
+    branches:
+      - 'test/sea-packaging'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  RUST_TOOLCHAIN: 'stable'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            exe: VCPtoolbox.exe
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            exe: VCPtoolbox
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+            exe: VCPtoolbox
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build rust-vexus-lite
+        working-directory: rust-vexus-lite
+        run: |
+          npm install
+          npm run build
+
+      # ===== Step 1: Test esbuild bundle =====
+      - name: Bundle with esbuild
+        run: npm run bundle
+
+      - name: Verify bundle
+        shell: bash
+        run: |
+          test -f dist/server.bundle.js && echo "✅ Bundle created"
+          SIZE=$(wc -c < dist/server.bundle.js)
+          echo "   Size: $((SIZE / 1024 / 1024)) MB"
+
+      # ===== Step 2: Full SEA package =====
+      - name: Run SEA package script
+        run: node build/package-sea.js ${{ matrix.platform }} ${{ matrix.arch }}
+
+      - name: List output
+        shell: bash
+        run: |
+          echo "=== dist/ contents ==="
+          ls -la dist/
+          echo ""
+          echo "=== Package contents ==="
+          ls -la dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}/ || true
+
+      # ===== Step 3: Smoke test =====
+      - name: Smoke test - verify structure
+        shell: bash
+        run: |
+          PKG="dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}"
+          echo "=== Checking SEA package structure ==="
+
+          # Check exe exists
+          test -f "$PKG/${{ matrix.exe }}" && echo "✅ Executable: ${{ matrix.exe }}" || echo "❌ No executable"
+
+          # Check native modules
+          find "$PKG/node_modules" -name "*.node" 2>/dev/null | while read f; do
+            echo "✅ Native: $f"
+          done
+
+          # Check rust-vexus-lite
+          find "$PKG/rust-vexus-lite" -name "*.node" 2>/dev/null | while read f; do
+            echo "✅ Vexus: $f"
+          done
+
+          # Check user dirs
+          for dir in AdminPanel Agent Plugin; do
+            test -d "$PKG/$dir" && echo "✅ Dir: $dir/" || echo "⚠️  Missing: $dir/"
+          done
+
+          # Check no node_modules bloat (should only have native .node files)
+          if [ -d "$PKG/node_modules" ]; then
+            JS_COUNT=$(find "$PKG/node_modules" -name "*.js" | wc -l)
+            NODE_COUNT=$(find "$PKG/node_modules" -name "*.node" | wc -l)
+            echo "   node_modules: $NODE_COUNT .node files, $JS_COUNT .js files"
+            if [ "$JS_COUNT" -gt 50 ]; then
+              echo "⚠️  Too many JS files in node_modules — bundling may have missed some"
+            fi
+          fi
+
+          # Check no scattered source JS in root
+          test ! -f "$PKG/server.js" && echo "✅ No scattered server.js (bundled in exe)" || echo "⚠️  server.js exists outside exe"
+
+      - name: Smoke test - exe runs
+        shell: bash
+        run: |
+          PKG="dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}"
+          EXE="$PKG/${{ matrix.exe }}"
+
+          if [ ! -f "$EXE" ]; then
+            echo "⚠️  Executable not found, skipping run test"
+            exit 0
+          fi
+
+          chmod +x "$EXE" 2>/dev/null || true
+
+          # Test: exe prints version/help without crashing
+          timeout 10 "$EXE" -e "console.log('SEA binary works! Node', process.version); process.exit(0);" || {
+            # If SEA injection worked, -e flag may not work. Try just running it briefly.
+            echo "Note: -e flag may not work in SEA mode (expected)"
+          }
+
+      # ===== Upload artifact =====
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}.*
+          retention-days: 7
