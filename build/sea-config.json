@@ -1,7 +1,7 @@
 {
-  "main": "dist/launcher.bundle.js",
+  "main": "dist/vcp.bundle.js",
   "output": "dist/sea-prep.blob",
   "disableExperimentalSEAWarning": true,
   "useSnapshot": false,
-  "useCodeCache": true
+  "useCodeCache": false
 }

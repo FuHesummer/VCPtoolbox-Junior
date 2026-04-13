@@ -3,20 +3,15 @@
  * VCPtoolbox-Junior — Single Executable Application (SEA) Packager
  *
  * Builds a single-exe distributable:
- * 1. esbuild bundles all JS → dist/server.bundle.js
+ * 1. esbuild bundles server+admin → dist/vcp.bundle.js
  * 2. Node.js SEA generates blob → dist/sea-prep.blob
  * 3. Copies node binary and injects blob → dist/VCPtoolbox[.exe]
- * 4. Copies native modules + user dirs → dist/<package-name>/
+ * 4. Copies native modules + user dirs
  * 5. Compresses to archive
  *
  * Usage: node build/package-sea.js [platform] [arch]
- *
- * Prerequisites:
- *   npm install esbuild --save-dev
- *   Node.js >= 20
  */
 const fs = require('fs');
-const fsp = require('fs').promises;
 const path = require('path');
 const { execSync } = require('child_process');
 const https = require('https');
@@ -54,8 +49,7 @@ const USER_DIRS = [
 
 const USER_FILES = [
     'config.env.example',
-    'maintain.js',         // CLI tool (runs via bundled node or system node)
-    'adminServer.js',      // Separate process
+    'maintain.js',
     'agent_map.json',
     'LICENSE',
     'README.md',
@@ -74,12 +68,10 @@ async function main() {
     // ===== Step 1: esbuild bundle =====
     console.log('📦 Step 1/5: Bundling JS with esbuild...');
     execSync('node build/esbuild.config.js', { cwd: ROOT, stdio: 'inherit' });
-    // Verify all 3 bundles exist
-    for (const f of ['launcher.bundle.js', 'server.bundle.js', 'admin.bundle.js']) {
-        if (!fs.existsSync(path.join(DIST_DIR, f))) throw new Error(`${f} not found`);
-    }
-    const bundleSize = (fs.statSync(path.join(DIST_DIR, 'server.bundle.js')).size / 1024 / 1024).toFixed(2);
-    console.log(`   Server bundle: ${bundleSize} MB\n`);
+    const bundlePath = path.join(DIST_DIR, 'vcp.bundle.js');
+    if (!fs.existsSync(bundlePath)) throw new Error('vcp.bundle.js not found');
+    const bundleSize = (fs.statSync(bundlePath).size / 1024 / 1024).toFixed(2);
+    console.log(`   Bundle: ${bundleSize} MB\n`);
 
     // ===== Step 2: Download Node.js for target platform =====
     console.log(`⬇️  Step 2/5: Downloading Node.js v${NODE_VERSION} for ${platform}-${arch}...`);
@@ -104,50 +96,48 @@ async function main() {
     // Find the node binary
     let nodeBin;
     if (platform === 'win32') {
-        // Inside extracted zip: node-v22.16.0-win-x64/node.exe
         const extracted = fs.readdirSync(nodeDir).find(d => d.startsWith('node-'));
         nodeBin = path.join(nodeDir, extracted || '', 'node.exe');
     } else {
         nodeBin = path.join(nodeDir, 'bin', 'node');
     }
-
     if (!fs.existsSync(nodeBin)) throw new Error(`Node binary not found: ${nodeBin}`);
     console.log(`   Node binary: ${nodeBin}\n`);
 
     // ===== Step 3: Create SEA blob & inject =====
     console.log('💉 Step 3/5: Creating SEA blob & injecting into binary...');
 
-    // Only works when building for the CURRENT platform
-    // For cross-compilation, skip SEA and ship bundle + node separately
     const isCrossBuild = platform !== process.platform || arch !== process.arch;
 
     if (isCrossBuild) {
-        console.log('   ⚠️  Cross-build detected — shipping as node binary + bundles');
-        const exePath = path.join(outputDir, EXE_NAME.replace('.exe', '') + (platform === 'win32' ? '.exe' : ''));
+        // Cross-build: ship node binary + bundle + start script
+        console.log('   ⚠️  Cross-build detected — shipping as node binary + bundle');
+        const exePath = path.join(outputDir, EXE_NAME);
         fs.copyFileSync(nodeBin, exePath);
 
-        // Create launcher script that runs launcher.bundle.js
+        // Copy the bundle alongside
+        fs.copyFileSync(bundlePath, path.join(outputDir, 'vcp.bundle.js'));
+
         if (platform === 'win32') {
             fs.writeFileSync(path.join(outputDir, 'start.bat'),
-                `@echo off\ntitle VCPtoolbox-Junior\n"%~dp0${EXE_NAME}" "%~dp0launcher.bundle.js"\npause\n`);
+                '@echo off\r\ntitle VCPtoolbox-Junior\r\n"%~dp0VCPtoolbox.exe" "%~dp0vcp.bundle.js"\r\npause\r\n');
         } else {
             fs.writeFileSync(path.join(outputDir, 'start.sh'),
-                `#!/bin/bash\nDIR="$(cd "$(dirname "$0")" && pwd)"\nchmod +x "$DIR/${EXE_NAME}"\nexec "$DIR/${EXE_NAME}" "$DIR/launcher.bundle.js" "$@"\n`,
+                '#!/bin/bash\nDIR="$(cd "$(dirname "$0")" && pwd)"\nchmod +x "$DIR/VCPtoolbox"\nexec "$DIR/VCPtoolbox" "$DIR/vcp.bundle.js" "$@"\n',
                 { mode: 0o755 });
         }
     } else {
         // Native build: use Node.js SEA
-        // Generate blob using SYSTEM node (not the downloaded one)
-        // The system node (from GitHub Actions setup-node) supports --experimental-sea-config
-        execSync(`node --experimental-sea-config build/sea-config.json`, {
+        // Use the DOWNLOADED node binary to generate blob (version match guaranteed)
+        execSync(`"${nodeBin}" --experimental-sea-config build/sea-config.json`, {
             cwd: ROOT,
-            stdio: 'inherit'
+            stdio: 'inherit',
         });
 
         const blobPath = path.join(DIST_DIR, 'sea-prep.blob');
         if (!fs.existsSync(blobPath)) throw new Error('SEA blob not found');
 
-        // Copy node binary to output
+        // Copy downloaded node binary to output
         const exePath = path.join(outputDir, EXE_NAME);
         fs.copyFileSync(nodeBin, exePath);
 
@@ -157,21 +147,16 @@ async function main() {
         }
 
         // Inject blob using postject
-        const sentinel = 'NODE_SEA_BLOB';
         const postjectArgs = [
             `"${exePath}"`,
-            sentinel,
+            'NODE_SEA_BLOB',
             `"${blobPath}"`,
             '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
         ];
-
         if (platform === 'darwin') postjectArgs.push('--macho-segment-name', 'NODE_SEA');
         if (platform === 'linux') postjectArgs.push('--overwrite');
 
-        execSync(`npx postject ${postjectArgs.join(' ')}`, {
-            cwd: ROOT,
-            stdio: 'inherit'
-        });
+        execSync(`npx postject ${postjectArgs.join(' ')}`, { cwd: ROOT, stdio: 'inherit' });
 
         // Re-sign (macOS)
         if (platform === 'darwin') {
@@ -186,19 +171,10 @@ async function main() {
         console.log(`   ✅ SEA binary: ${EXE_NAME}\n`);
     }
 
-    // Copy server + admin bundles (launcher forks these)
-    for (const bundle of ['server.bundle.js', 'admin.bundle.js']) {
-        const src = path.join(DIST_DIR, bundle);
-        if (fs.existsSync(src)) {
-            fs.copyFileSync(src, path.join(outputDir, bundle));
-            console.log(`   Copied ${bundle}`);
-        }
-    }
-
     // ===== Step 4: Copy native modules + user dirs =====
     console.log('📁 Step 4/5: Copying native modules & user files...');
 
-    // Native modules: find and copy .node files
+    // Native modules: copy .node files
     const nativeDir = path.join(outputDir, 'node_modules');
     for (const mod of NATIVE_MODULES) {
         await copyNativeModule(mod, nativeDir);
@@ -273,32 +249,27 @@ async function copyNativeModule(moduleName, destNodeModules) {
     const srcDir = path.join(ROOT, 'node_modules', moduleName);
     if (!fs.existsSync(srcDir)) return;
 
-    // Copy package.json + binding files + .node files
     const destDir = path.join(destNodeModules, moduleName);
     fs.mkdirSync(destDir, { recursive: true });
 
-    // Copy package.json (needed for require resolution)
     const pkgJson = path.join(srcDir, 'package.json');
     if (fs.existsSync(pkgJson)) {
         fs.copyFileSync(pkgJson, path.join(destDir, 'package.json'));
     }
 
-    // Recursively find and copy .node files + their parent structure
     await copyNodeFiles(srcDir, destDir);
 
-    // For scoped packages like @node-rs/jieba, also copy platform-specific packages
+    // For scoped packages, copy platform-specific sub-packages
     if (moduleName.startsWith('@')) {
         const scope = moduleName.split('/')[0];
         const scopeDir = path.join(ROOT, 'node_modules', scope);
         if (fs.existsSync(scopeDir)) {
-            const entries = fs.readdirSync(scopeDir);
-            for (const entry of entries) {
+            for (const entry of fs.readdirSync(scopeDir)) {
                 const entryDir = path.join(scopeDir, entry);
                 if (fs.statSync(entryDir).isDirectory() && hasNodeFile(entryDir)) {
                     const destEntry = path.join(destNodeModules, scope, entry);
                     fs.mkdirSync(destEntry, { recursive: true });
                     await copyNodeFiles(entryDir, destEntry);
-                    // Copy package.json
                     const epkg = path.join(entryDir, 'package.json');
                     if (fs.existsSync(epkg)) fs.copyFileSync(epkg, path.join(destEntry, 'package.json'));
                 }
@@ -308,19 +279,15 @@ async function copyNativeModule(moduleName, destNodeModules) {
 }
 
 function hasNodeFile(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const e of entries) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         if (e.name.endsWith('.node')) return true;
-        if (e.isDirectory()) {
-            if (hasNodeFile(path.join(dir, e.name))) return true;
-        }
+        if (e.isDirectory() && hasNodeFile(path.join(dir, e.name))) return true;
     }
     return false;
 }
 
 async function copyNodeFiles(srcDir, destDir) {
-    const entries = fs.readdirSync(srcDir, { withFileTypes: true });
-    for (const entry of entries) {
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
         const srcPath = path.join(srcDir, entry.name);
         const destPath = path.join(destDir, entry.name);
         if (entry.isDirectory()) {
@@ -338,8 +305,7 @@ async function copyRecursive(src, dest, excludes = []) {
     const stat = fs.statSync(src);
     if (stat.isDirectory()) {
         fs.mkdirSync(dest, { recursive: true });
-        const entries = fs.readdirSync(src);
-        for (const entry of entries) {
+        for (const entry of fs.readdirSync(src)) {
             if (excludes.some(ex => entry.includes(ex))) continue;
             await copyRecursive(path.join(src, entry), path.join(dest, entry), excludes);
         }
