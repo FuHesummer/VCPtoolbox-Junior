@@ -8,17 +8,9 @@ Fork from [lioensky/VCPToolBox](https://github.com/lioensky/VCPToolBox)
 
 ## 这是什么
 
-VCPtoolbox-Junior 是 VCPToolBox 的精简分支，保留了 VCP 最核心的能力：**情感记忆系统（浪潮 V8 算法）**，并对架构进行了解耦和整理。
+VCPtoolbox-Junior 是 VCPToolBox 的解耦分支，保留了 VCP 的全部核心能力：**情感记忆系统（浪潮 V8 算法）、50+ 插件生态、分布式多节点、Agent 系统**，并对架构进行了重构和整理。
 
-**如果你想要完整的 VCP 体验**（30+ 插件、分布式多节点、硬件级权限、全功能 Agent 系统），请使用 [原仓库](https://github.com/lioensky/VCPToolBox) 进行部署和魔改。
-
-**如果你想要**：
-- 干净的代码结构，方便二次开发
-- 只需要核心的 RAG 记忆/日记系统
-- 学习 VCP 插件开发
-- 作为自己项目的情感记忆引擎
-
-那这个仓库适合你。
+**与 [原仓库](https://github.com/lioensky/VCPToolBox) 的区别**：代码结构更干净、模块解耦更清晰、支持自由二次开发和深度定制。功能不做删减，适合想在 VCP 基础上做自己项目的开发者。
 
 ---
 
