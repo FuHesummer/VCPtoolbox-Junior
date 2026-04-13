@@ -20,6 +20,7 @@ const NATIVE_EXTERNALS = [
     'hnswlib-node',
     '@node-rs/jieba',
     '@napi-rs/canvas',
+    'fsevents',     // macOS-only native module
     'node-fetch',   // ESM-only, must stay external for dynamic import()
 ];
 

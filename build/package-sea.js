@@ -139,8 +139,9 @@ async function main() {
         }
     } else {
         // Native build: use Node.js SEA
-        // Generate blob
-        execSync(`"${nodeBin}" --experimental-sea-config build/sea-config.json`, {
+        // Generate blob using SYSTEM node (not the downloaded one)
+        // The system node (from GitHub Actions setup-node) supports --experimental-sea-config
+        execSync(`node --experimental-sea-config build/sea-config.json`, {
             cwd: ROOT,
             stdio: 'inherit'
         });
