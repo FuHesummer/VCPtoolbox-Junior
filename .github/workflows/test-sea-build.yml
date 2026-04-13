@@ -116,47 +116,55 @@ jobs:
           # Check no scattered source JS in root
           test ! -f "$PKG/server.js" && echo "✅ No scattered server.js (bundled in exe)" || echo "⚠️  server.js exists outside exe"
 
-      - name: Smoke test - exe runs
+      - name: Smoke test - startup
         shell: bash
         run: |
           PKG="dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}"
           EXE="$PKG/${{ matrix.exe }}"
 
           if [ ! -f "$EXE" ]; then
-            echo "⚠️  Executable not found, skipping run test"
+            echo "⚠️  Executable not found, skipping"
             exit 0
           fi
 
           chmod +x "$EXE" 2>/dev/null || true
 
-          # Check binary is valid executable (not corrupt)
-          file "$EXE" 2>/dev/null || true
-          EXE_SIZE=$(wc -c < "$EXE")
-          echo "   Binary size: $((EXE_SIZE / 1024 / 1024)) MB"
+          # Create minimal config
+          cd "$PKG"
+          cat > config.env << 'ENVEOF'
+          API_Key=test-key
+          API_URL=http://localhost:3000
+          PORT=19999
+          Key=testkey
+          AdminUsername=test
+          AdminPassword=test
+          EMBEDDING_API_KEY=test
+          EMBEDDING_API_URL=http://localhost
+          EMBEDDING_MODEL_NAME=test
+          VECTORDB_DIMENSION=3072
+          DebugMode=false
+          PANEL_RELEASE_URL=disabled
+          KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false
+ENVEOF
 
-          if [ "$EXE_SIZE" -lt 10000000 ]; then
-            echo "⚠️  Binary seems too small (<10MB), SEA injection may have failed"
+          # Start and capture output
+          echo "=== Starting ${{ matrix.exe }} ==="
+          timeout 15 "./${{ matrix.exe }}" > startup.log 2>&1 &
+          PID=$!
+          sleep 10
+
+          cat startup.log
+
+          # Verify startup messages
+          if grep -q "监听端口\|listening\|加载插件\|Plugin discovery" startup.log; then
+            echo "✅ Server started OK"
           else
-            echo "✅ Binary size looks reasonable"
+            echo "⚠️  Startup messages not found"
           fi
 
-          # For cross-build (bundle + node), test running the bundle
-          if [ -f "$PKG/server.bundle.js" ]; then
-            echo "Cross-build mode: testing bundle loads..."
-            cd "$PKG"
-            timeout 5 "./${{ matrix.exe }}" -e "
-              console.log('Node', process.version, 'OK');
-              process.exit(0);
-            " && echo "✅ Node binary runs" || echo "⚠️  Node binary test inconclusive"
-            cd -
-          else
-            # SEA mode: binary runs embedded script, just check it doesn't segfault
-            echo "SEA mode: quick crash test (5s timeout, exit code != segfault = OK)..."
-            cd "$PKG"
-            timeout 5 "./${{ matrix.exe }}" 2>&1 | head -5 || true
-            echo "✅ Binary executed without segfault"
-            cd -
-          fi
+          kill $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          cd -
 
       # ===== Upload artifact =====
       - name: Upload package
