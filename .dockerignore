@@ -1,44 +1,63 @@
-# Git files
+# Git
 .git
 .gitignore
 
-# Node.js
-node_modules
+# Build output (rebuilt inside container)
+dist/
+node_modules/
 
 # Docker files
 Dockerfile
 docker-compose.yml
 .dockerignore
 
-# Configuration files (to be mounted as volumes)
+# Runtime config (mounted as volume)
 config.env
+
+# Runtime data (mounted as volumes)
+knowledge/
+thinking/
+dailynote/
+VectorStore/
+DebugLog/
+VCPTimedContacts/
+VCPAsyncResults/
+
+# Plugin runtime data
 Plugin/*/config.env
 Plugin/*/.env
-
-# Cache and data directories (to be mounted as volumes or handled by named volumes)
-Plugin/WeatherReporter/city_cache.txt
+Plugin/*/code.bin
+Plugin/.store-cache.json
 Plugin/VCPLog/log/
-Plugin/ImageProcessor/cache/ # 假设插件的缓存目录是这个，如果不是，需要确认
-dailynote/
-image/fluxgen/
-image/小克表情包/
-image/通用表情包/
-image/邵神韵表情包/
-# 其他 image 子目录如果也是动态生成的，也应该考虑加入
+Plugin/WeatherReporter/*_cache.*
+Plugin/TavilySearch/.vcptoolbox_tavily_cache.json
+Plugin/RAGDiaryPlugin/vector_cache.json
+Plugin/RAGDiaryPlugin/semantic_vectors/
+Plugin/ImageProcessor/*_cache.json
+Plugin/ProjectAnalyst/database/
+Plugin/EmojiListGenerator/generated_lists/
 
-# IDE and OS specific files
+# Generated images
+image/fluxgen/
+image/通用表情包/*
+!image/通用表情包/阿库娅-一脸智障.jpg
+!image/通用表情包/阿库娅-智慧的眼神.jpg
+
+# Rust build cache (rebuilt inside container)
+rust-vexus-lite/target/
+
+# IDE / OS
 .vscode/
 .idea/
 *.swp
 *~
 Thumbs.db
 .DS_Store
+.obsidian
+
+# Context (dev only)
+.context/
 
 # Logs
 *.log
 logs/
-
-# Test files if not needed in production
-example.test.js
-VCPChrome/
-Plugin/JapaneseHelper/
