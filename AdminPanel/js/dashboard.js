@@ -113,8 +113,14 @@ async function updateDashboardData() {
 
     try {
         const [resources, processes, authCodeData] = await Promise.all([
-            apiFetch(`${MONITOR_API_BASE_URL}/system/resources`, {}, false),
-            apiFetch(`${MONITOR_API_BASE_URL}/pm2/processes`, {}, false),
+            apiFetch(`${MONITOR_API_BASE_URL}/system/resources`, {}, false).catch(err => {
+                console.warn('Failed to fetch system resources:', err.message);
+                return null;
+            }),
+            apiFetch(`${MONITOR_API_BASE_URL}/pm2/processes`, {}, false).catch(err => {
+                console.warn('Failed to fetch PM2 processes:', err.message);
+                return { success: true, processes: [] };
+            }),
             apiFetch(`${API_BASE_URL}/user-auth-code`, {}, false).catch(err => {
                 console.warn('Failed to fetch user auth code:', err.message);
                 return { success: false, code: 'N/A (Error)' };
@@ -125,13 +131,13 @@ async function updateDashboardData() {
             userAuthCodeDisplay.textContent = authCodeData.success ? authCodeData.code : (authCodeData.code || 'N/A (未运行)');
         }
 
-        if (cpuProgress && cpuUsageText && cpuInfoText) {
+        if (cpuProgress && cpuUsageText && cpuInfoText && resources && resources.system) {
             const cpuUsage = resources.system.cpu.usage.toFixed(1);
             updateProgressCircle(cpuProgress, cpuUsageText, cpuUsage);
             cpuInfoText.innerHTML = `平台: ${resources.system.nodeProcess.platform} <br> 架构: ${resources.system.nodeProcess.arch}`;
         }
 
-        if (memProgress && memUsageText && memInfoText) {
+        if (memProgress && memUsageText && memInfoText && resources && resources.system) {
             const memUsed = resources.system.memory.used;
             const memTotal = resources.system.memory.total;
             const vcpMemUsed = resources.system.nodeProcess.memory.rss;

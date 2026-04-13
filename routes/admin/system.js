@@ -17,7 +17,7 @@ module.exports = function(options) {
     // 获取PM2进程列表和资源使用情况
     router.get('/system-monitor/pm2/processes', (req, res) => {
         if (!pm2) {
-            return res.status(503).json({ success: false, error: 'PM2 not available in bundled mode' });
+            return res.json({ success: true, processes: [], message: 'PM2 not available (bundled mode)' });
         }
         pm2.list((err, list) => {
             if (err) {
