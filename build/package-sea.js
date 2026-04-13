@@ -64,6 +64,7 @@ const USER_FILES = [
     'config.env.example',
     'maintain.js',
     'agent_map.json',
+    'rag_params.json',
     'LICENSE',
     'README.md',
 ];
@@ -184,13 +185,20 @@ async function main() {
         console.log(`   ✅ SEA binary: ${EXE_NAME}\n`);
     }
 
-    // ===== Step 4: Copy native modules + user dirs =====
-    console.log('📁 Step 4/5: Copying native modules & user files...');
+    // ===== Step 4: Copy node_modules + user dirs =====
+    console.log('📁 Step 4/5: Copying node_modules & user files...');
 
-    // Native modules: copy .node files
-    const nativeDir = path.join(outputDir, 'node_modules');
-    for (const mod of NATIVE_MODULES) {
-        await copyNativeModule(mod, nativeDir);
+    // Copy full node_modules.
+    // Core modules (modules/TextChunker.js etc.) are loaded from disk by plugins
+    // via relative paths and require npm packages (dotenv, express, etc.).
+    // These can't be resolved from the bundle, only from node_modules on disk.
+    // Plugin package.json handles plugin-specific deps independently.
+    const nmSrc = path.join(ROOT, 'node_modules');
+    if (fs.existsSync(nmSrc)) {
+        console.log('   Copying node_modules...');
+        await copyRecursive(nmSrc, path.join(outputDir, 'node_modules'), [
+            '.cache', '.package-lock.json',
+        ]);
     }
 
     // rust-vexus-lite
