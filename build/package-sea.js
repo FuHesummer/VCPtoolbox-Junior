@@ -256,23 +256,28 @@ async function main() {
 }
 
 /**
- * Copy a native module — full package (JS + .node binaries)
- * Excludes source code, tests, and docs to minimize size
+ * Copy a native module + all its transitive npm dependencies.
+ * Recursively resolves package.json "dependencies" to ensure nothing is missing.
  */
+const _copiedModules = new Set();
+
 async function copyNativeModule(moduleName, destNodeModules) {
+    if (_copiedModules.has(moduleName)) return;
+    _copiedModules.add(moduleName);
+
     const srcDir = path.join(ROOT, 'node_modules', moduleName);
     if (!fs.existsSync(srcDir)) return;
 
     const destDir = path.join(destNodeModules, moduleName);
-    // Copy the entire module, excluding dev files only
-    // NOTE: do NOT exclude 'src' — many packages (node-fetch) have their code there
+    if (fs.existsSync(destDir)) return; // already copied
+
     await copyRecursive(srcDir, destDir, [
         '.github', 'test', 'tests', 'docs', 'example', 'examples',
         'benchmark', '.eslintrc', '.prettierrc', 'CHANGELOG', 'CONTRIBUTING',
-        '.travis.yml', 'appveyor.yml', 'binding.gyp', 'Makefile',
+        '.travis.yml', 'appveyor.yml', 'Makefile',
     ]);
 
-    // For scoped packages like @node-rs/jieba, also copy platform-specific packages
+    // For scoped packages, also copy platform-specific sub-packages
     if (moduleName.startsWith('@')) {
         const scope = moduleName.split('/')[0];
         const scopeDir = path.join(ROOT, 'node_modules', scope);
@@ -281,12 +286,26 @@ async function copyNativeModule(moduleName, destNodeModules) {
                 const entryDir = path.join(scopeDir, entry);
                 if (fs.statSync(entryDir).isDirectory() && hasNodeFile(entryDir)) {
                     const destEntry = path.join(destNodeModules, scope, entry);
-                    await copyRecursive(entryDir, destEntry, [
-                        '.github', 'test', 'tests', 'docs',
-                    ]);
+                    if (!fs.existsSync(destEntry)) {
+                        await copyRecursive(entryDir, destEntry, [
+                            '.github', 'test', 'tests', 'docs',
+                        ]);
+                    }
                 }
             }
         }
+    }
+
+    // Recursively copy production dependencies
+    const pkgPath = path.join(srcDir, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const deps = Object.keys(pkg.dependencies || {});
+            for (const dep of deps) {
+                await copyNativeModule(dep, destNodeModules);
+            }
+        } catch {}
     }
 }
 
