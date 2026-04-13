@@ -28,10 +28,10 @@ COPY rust-vexus-lite/ ./rust-vexus-lite/
 RUN cd rust-vexus-lite && npm install && npm run build
 
 # Install Python dependencies
-COPY requirements.txt ./
-RUN sed -i '/^win10toast/s/^/#/' requirements.txt && \
+COPY python/requirements.txt ./python/
+RUN sed -i '/^win10toast/s/^/#/' python/requirements.txt && \
     python3 -m pip install --no-cache-dir --break-system-packages -U pip setuptools wheel && \
-    pip3 install --no-cache-dir --break-system-packages --target=/usr/src/app/pydeps -r requirements.txt
+    pip3 install --no-cache-dir --break-system-packages --target=/usr/src/app/pydeps -r python/requirements.txt
 
 # Copy all source code
 COPY . .
@@ -114,7 +114,7 @@ COPY --from=build /usr/src/app/docs ./docs
 COPY --from=build /usr/src/app/config.env.example ./
 COPY --from=build /usr/src/app/maintain.js ./
 COPY --from=build /usr/src/app/package.json ./
-COPY --from=build /usr/src/app/requirements.txt ./
+COPY --from=build /usr/src/app/python/requirements.txt ./python/
 
 # Copy Python scripts in root (if any)
 COPY --from=build /usr/src/app/*.py ./
