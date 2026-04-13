@@ -14,6 +14,8 @@ const http = require('http');
 const DEFAULT_RELEASE_URL = 'https://api.github.com/repos/FuHesummer/VCPtoolbox-Junior-Panel/releases/latest';
 const RELEASE_API_URL = process.env.PANEL_RELEASE_URL || DEFAULT_RELEASE_URL;
 const PANEL_DISABLED = RELEASE_API_URL.toLowerCase() === 'disabled';
+// Auto-update: enabled by default. Checks remote version every 3h,
+// only downloads if tag changed. Set PANEL_AUTO_UPDATE=false to disable.
 const PANEL_AUTO_UPDATE = (process.env.PANEL_AUTO_UPDATE || 'true').toLowerCase() !== 'false';
 const PANEL_DIR = path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'AdminPanel');
 const VERSION_FILE = path.join(PANEL_DIR, '.panel-version');
@@ -62,13 +64,26 @@ async function ensurePanel(options = {}) {
 }
 
 /**
- * Check if a newer version is available and update if so
+ * Check if a newer version is available and update if so.
+ * Only calls GitHub API if local version file exists (tag comparison).
+ * First install (no version file) skips update check — panel is bundled.
  */
 async function checkForUpdate(silent = false) {
     try {
         const currentVersion = await getCurrentVersion();
-        const latestRelease = await fetchLatestRelease();
 
+        // No version file = bundled panel, write current tag and skip
+        if (!currentVersion) {
+            try {
+                const pkg = JSON.parse(fsSync.readFileSync(path.join(process.env.VCP_ROOT || path.join(__dirname, '..'), 'package.json'), 'utf8'));
+                await fs.writeFile(VERSION_FILE, pkg.version || 'bundled', 'utf8');
+            } catch {}
+            if (!silent) console.log('[PanelUpdater] Panel version file created (bundled). Skipping remote check.');
+            return;
+        }
+
+        // Fetch remote version and compare
+        const latestRelease = await fetchLatestRelease();
         if (!latestRelease || !latestRelease.tag_name) return;
 
         if (currentVersion === latestRelease.tag_name) {
@@ -76,7 +91,7 @@ async function checkForUpdate(silent = false) {
             return;
         }
 
-        if (!silent) console.log(`[PanelUpdater] New version available: ${latestRelease.tag_name} (current: ${currentVersion || 'none'})`);
+        if (!silent) console.log(`[PanelUpdater] New version available: ${latestRelease.tag_name} (current: ${currentVersion})`);
         await downloadRelease(latestRelease, silent);
     } catch (err) {
         if (!silent) console.warn('[PanelUpdater] Update check failed:', err.message);
