@@ -131,21 +131,21 @@ jobs:
 
           # Create minimal config
           cd "$PKG"
-          cat > config.env << 'ENVEOF'
-          API_Key=test-key
-          API_URL=http://localhost:3000
-          PORT=19999
-          Key=testkey
-          AdminUsername=test
-          AdminPassword=test
-          EMBEDDING_API_KEY=test
-          EMBEDDING_API_URL=http://localhost
-          EMBEDDING_MODEL_NAME=test
-          VECTORDB_DIMENSION=3072
-          DebugMode=false
-          PANEL_RELEASE_URL=disabled
-          KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false
-ENVEOF
+          printf '%s\n' \
+            "API_Key=test-key" \
+            "API_URL=http://localhost:3000" \
+            "PORT=19999" \
+            "Key=testkey" \
+            "AdminUsername=test" \
+            "AdminPassword=test" \
+            "EMBEDDING_API_KEY=test" \
+            "EMBEDDING_API_URL=http://localhost" \
+            "EMBEDDING_MODEL_NAME=test" \
+            "VECTORDB_DIMENSION=3072" \
+            "DebugMode=false" \
+            "PANEL_RELEASE_URL=disabled" \
+            "KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false" \
+            > config.env
 
           # Start and capture output
           echo "=== Starting ${{ matrix.exe }} ==="
