@@ -281,6 +281,23 @@ async function install(pluginName, options = {}) {
         }
     }
 
+    // Auto-install npm dependencies if plugin has package.json
+    const pluginPkgPath = path.join(targetDir, 'package.json');
+    if (fsSync.existsSync(pluginPkgPath)) {
+        try {
+            console.log(`[PluginStore] Installing npm dependencies for "${pluginName}"...`);
+            const { execSync } = require('child_process');
+            execSync('npm install --production --legacy-peer-deps', {
+                cwd: targetDir,
+                stdio: 'pipe',
+                timeout: 120000,
+            });
+            console.log(`[PluginStore] Dependencies installed for "${pluginName}".`);
+        } catch (e) {
+            console.error(`[PluginStore] Failed to install dependencies for "${pluginName}":`, e.message);
+        }
+    }
+
     let message = isUpdate
         ? `Plugin '${pluginName}' updated (${downloaded} files).`
         : `Plugin '${pluginName}' installed (${downloaded} files).`;

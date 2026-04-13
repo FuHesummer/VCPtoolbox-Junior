@@ -2,7 +2,8 @@
 const fs = require('fs').promises;
 const EventEmitter = require('events');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
+const fsSync = require('fs');
 const schedule = require('node-schedule');
 const dotenv = require('dotenv'); // Ensures dotenv is available
 const FileFetcherServer = require('./modules/FileFetcherServer.js');
@@ -413,6 +414,38 @@ class PluginManager extends EventEmitter {
         console.log('[PluginManager] All plugin shutdown processes initiated and scheduled jobs cancelled.'); // Keep
     }
 
+    /**
+     * Ensure plugin npm dependencies are installed.
+     * If a plugin has package.json but no node_modules/, run npm install.
+     * This makes plugins self-contained — they manage their own deps.
+     */
+    async _ensurePluginDeps(pluginPath, pluginName) {
+        const pkgPath = path.join(pluginPath, 'package.json');
+        const nmPath = path.join(pluginPath, 'node_modules');
+
+        if (!fsSync.existsSync(pkgPath)) return; // no package.json, nothing to install
+
+        // Check if node_modules exists and has content
+        if (fsSync.existsSync(nmPath)) {
+            try {
+                const entries = fsSync.readdirSync(nmPath);
+                if (entries.length > 0) return; // already installed
+            } catch {}
+        }
+
+        console.log(`[PluginManager] Installing dependencies for plugin "${pluginName}"...`);
+        try {
+            execSync('npm install --production --legacy-peer-deps', {
+                cwd: pluginPath,
+                stdio: 'pipe',
+                timeout: 60000,
+            });
+            console.log(`[PluginManager] Dependencies installed for "${pluginName}".`);
+        } catch (e) {
+            console.error(`[PluginManager] Failed to install dependencies for "${pluginName}":`, e.message);
+        }
+    }
+
     async loadPlugins() {
         console.log('[PluginManager] Starting plugin discovery...');
         // 1. 清理现有插件状态
@@ -482,6 +515,9 @@ class PluginManager extends EventEmitter {
 
                         if ((isPreprocessor || isService) && manifest.entryPoint.script && manifest.communication?.protocol === 'direct') {
                             try {
+                                // Auto-install plugin dependencies if package.json exists
+                                await this._ensurePluginDeps(pluginPath, manifest.name);
+
                                 const scriptPath = path.join(pluginPath, manifest.entryPoint.script);
                                 const module = require(scriptPath);
 
