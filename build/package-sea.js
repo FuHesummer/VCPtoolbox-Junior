@@ -289,8 +289,6 @@ function hasNodeFile(dir) {
         if (e.isDirectory() && hasNodeFile(path.join(dir, e.name))) return true;
     }
     return false;
-        }
-    }
 }
 
 async function copyRecursive(src, dest, excludes = []) {
