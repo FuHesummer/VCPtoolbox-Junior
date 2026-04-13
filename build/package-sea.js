@@ -26,12 +26,19 @@ const arch = process.argv[3] || process.arch;
 
 const EXE_NAME = platform === 'win32' ? 'VCPtoolbox.exe' : 'VCPtoolbox';
 
-// Native modules: copy their prebuilt binaries
+// External modules: native binaries + ESM packages not bundleable
 const NATIVE_MODULES = [
     'better-sqlite3',
     'hnswlib-node',
     '@node-rs/jieba',
     '@napi-rs/canvas',
+    // node-fetch is ESM-only, cannot be bundled into CJS
+    'node-fetch',
+    'data-uri-to-buffer',
+    'fetch-blob',
+    'formdata-polyfill',
+    'node-domexception',
+    'web-streams-polyfill',
 ];
 
 // User-facing directories to include
@@ -243,23 +250,22 @@ async function main() {
 }
 
 /**
- * Copy only .node binary files from a native module
+ * Copy a native module — full package (JS + .node binaries)
+ * Excludes source code, tests, and docs to minimize size
  */
 async function copyNativeModule(moduleName, destNodeModules) {
     const srcDir = path.join(ROOT, 'node_modules', moduleName);
     if (!fs.existsSync(srcDir)) return;
 
     const destDir = path.join(destNodeModules, moduleName);
-    fs.mkdirSync(destDir, { recursive: true });
+    // Copy the entire module, excluding build artifacts and dev files
+    await copyRecursive(srcDir, destDir, [
+        'src', '.github', 'test', 'tests', 'docs', 'example', 'examples',
+        'benchmark', '.eslintrc', '.prettierrc', 'CHANGELOG', 'CONTRIBUTING',
+        '.travis.yml', 'appveyor.yml', 'binding.gyp', 'Makefile',
+    ]);
 
-    const pkgJson = path.join(srcDir, 'package.json');
-    if (fs.existsSync(pkgJson)) {
-        fs.copyFileSync(pkgJson, path.join(destDir, 'package.json'));
-    }
-
-    await copyNodeFiles(srcDir, destDir);
-
-    // For scoped packages, copy platform-specific sub-packages
+    // For scoped packages like @node-rs/jieba, also copy platform-specific packages
     if (moduleName.startsWith('@')) {
         const scope = moduleName.split('/')[0];
         const scopeDir = path.join(ROOT, 'node_modules', scope);
@@ -268,10 +274,9 @@ async function copyNativeModule(moduleName, destNodeModules) {
                 const entryDir = path.join(scopeDir, entry);
                 if (fs.statSync(entryDir).isDirectory() && hasNodeFile(entryDir)) {
                     const destEntry = path.join(destNodeModules, scope, entry);
-                    fs.mkdirSync(destEntry, { recursive: true });
-                    await copyNodeFiles(entryDir, destEntry);
-                    const epkg = path.join(entryDir, 'package.json');
-                    if (fs.existsSync(epkg)) fs.copyFileSync(epkg, path.join(destEntry, 'package.json'));
+                    await copyRecursive(entryDir, destEntry, [
+                        'src', '.github', 'test', 'tests', 'docs',
+                    ]);
                 }
             }
         }
@@ -284,19 +289,6 @@ function hasNodeFile(dir) {
         if (e.isDirectory() && hasNodeFile(path.join(dir, e.name))) return true;
     }
     return false;
-}
-
-async function copyNodeFiles(srcDir, destDir) {
-    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
-        const srcPath = path.join(srcDir, entry.name);
-        const destPath = path.join(destDir, entry.name);
-        if (entry.isDirectory()) {
-            if (['src', '.github', 'test', 'docs'].includes(entry.name)) continue;
-            fs.mkdirSync(destPath, { recursive: true });
-            await copyNodeFiles(srcPath, destPath);
-        } else if (entry.name.endsWith('.node') || entry.name === 'package.json' ||
-                   entry.name === 'index.js' || entry.name === 'binding.js') {
-            fs.copyFileSync(srcPath, destPath);
         }
     }
 }
