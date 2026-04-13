@@ -74,10 +74,12 @@ async function main() {
     // ===== Step 1: esbuild bundle =====
     console.log('📦 Step 1/5: Bundling JS with esbuild...');
     execSync('node build/esbuild.config.js', { cwd: ROOT, stdio: 'inherit' });
-    const bundlePath = path.join(DIST_DIR, 'server.bundle.js');
-    if (!fs.existsSync(bundlePath)) throw new Error('Bundle not found');
-    const bundleSize = (fs.statSync(bundlePath).size / 1024 / 1024).toFixed(2);
-    console.log(`   Bundle: ${bundleSize} MB\n`);
+    // Verify all 3 bundles exist
+    for (const f of ['launcher.bundle.js', 'server.bundle.js', 'admin.bundle.js']) {
+        if (!fs.existsSync(path.join(DIST_DIR, f))) throw new Error(`${f} not found`);
+    }
+    const bundleSize = (fs.statSync(path.join(DIST_DIR, 'server.bundle.js')).size / 1024 / 1024).toFixed(2);
+    console.log(`   Server bundle: ${bundleSize} MB\n`);
 
     // ===== Step 2: Download Node.js for target platform =====
     console.log(`⬇️  Step 2/5: Downloading Node.js v${NODE_VERSION} for ${platform}-${arch}...`);
@@ -120,21 +122,17 @@ async function main() {
     const isCrossBuild = platform !== process.platform || arch !== process.arch;
 
     if (isCrossBuild) {
-        console.log('   ⚠️  Cross-build detected — shipping as bundle + node binary (no SEA injection)');
-        // Copy node binary and bundle separately
+        console.log('   ⚠️  Cross-build detected — shipping as node binary + bundles');
         const exePath = path.join(outputDir, EXE_NAME.replace('.exe', '') + (platform === 'win32' ? '.exe' : ''));
         fs.copyFileSync(nodeBin, exePath);
 
-        // Copy bundle
-        fs.copyFileSync(bundlePath, path.join(outputDir, 'server.bundle.js'));
-
-        // Create launcher
+        // Create launcher script that runs launcher.bundle.js
         if (platform === 'win32') {
             fs.writeFileSync(path.join(outputDir, 'start.bat'),
-                `@echo off\ntitle VCPtoolbox-Junior\n"%~dp0${EXE_NAME}" "%~dp0server.bundle.js"\npause\n`);
+                `@echo off\ntitle VCPtoolbox-Junior\n"%~dp0${EXE_NAME}" "%~dp0launcher.bundle.js"\npause\n`);
         } else {
             fs.writeFileSync(path.join(outputDir, 'start.sh'),
-                `#!/bin/bash\nDIR="$(cd "$(dirname "$0")" && pwd)"\nexec "$DIR/${EXE_NAME}" "$DIR/server.bundle.js" "$@"\n`,
+                `#!/bin/bash\nDIR="$(cd "$(dirname "$0")" && pwd)"\nchmod +x "$DIR/${EXE_NAME}"\nexec "$DIR/${EXE_NAME}" "$DIR/launcher.bundle.js" "$@"\n`,
                 { mode: 0o755 });
         }
     } else {
@@ -186,6 +184,15 @@ async function main() {
         }
 
         console.log(`   ✅ SEA binary: ${EXE_NAME}\n`);
+    }
+
+    // Copy server + admin bundles (launcher forks these)
+    for (const bundle of ['server.bundle.js', 'admin.bundle.js']) {
+        const src = path.join(DIST_DIR, bundle);
+        if (fs.existsSync(src)) {
+            fs.copyFileSync(src, path.join(outputDir, bundle));
+            console.log(`   Copied ${bundle}`);
+        }
     }
 
     // ===== Step 4: Copy native modules + user dirs =====

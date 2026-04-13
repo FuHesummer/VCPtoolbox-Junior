@@ -1,5 +1,5 @@
 {
-  "main": "dist/server.bundle.js",
+  "main": "dist/launcher.bundle.js",
   "output": "dist/sea-prep.blob",
   "disableExperimentalSEAWarning": true,
   "useSnapshot": false,
