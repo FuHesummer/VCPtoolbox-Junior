@@ -1,6 +1,11 @@
 # VCPtoolbox-Junior
 
-> VCP (Variable & Command Protocol) 简化解耦版 — 专注情感记忆系统的轻量化中间层
+[![Stars](https://img.shields.io/github/stars/FuHesummer/VCPtoolbox-Junior?style=social)](https://github.com/FuHesummer/VCPtoolbox-Junior/stargazers)
+[![Release](https://img.shields.io/github/v/release/FuHesummer/VCPtoolbox-Junior)](https://github.com/FuHesummer/VCPtoolbox-Junior/releases)
+[![License](https://img.shields.io/github/license/FuHesummer/VCPtoolbox-Junior)](./LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)](https://ghcr.io/fuhesummer/vcptoolbox-junior)
+
+> VCPToolBox 解耦分支 — 情感记忆系统 + 50+ 插件生态 + 分布式多节点 + Agent 系统
 
 Fork from [lioensky/VCPToolBox](https://github.com/lioensky/VCPToolBox)
 
@@ -269,6 +274,12 @@ FuHesummer/VCPtoolbox-Junior (本仓库，精简解耦)
 |--------|------|
 | [FuHe](https://github.com/FuHesummer) | 项目发起 / 架构设计 |
 | 辉宝 | 项目命名 (VCPtoolbox-Junior) |
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=FuHesummer/VCPtoolbox-Junior&type=Date)](https://star-history.com/#FuHesummer/VCPtoolbox-Junior&Date)
 
 ---
 

@@ -3,8 +3,19 @@ name: Node.js CI & Docker Build
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.context/**'
+      - 'LICENSE'
+      - '.github/workflows/release.yml'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.context/**'
+      - 'LICENSE'
 
 jobs:
   build_and_test:
@@ -12,7 +23,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20.x] # 仅保留 Node 20, 移除 18.x
+        node-version: [22.x]
 
     steps:
     - name: Checkout code
@@ -27,16 +38,12 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
     - name: Build Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
-        file: ./Dockerfile
-        push: false # 在 PR 检查和 main 分支构建时不推送镜像
-        tags: lioensky/vcptoolbox:latest # 替换为您的 Docker Hub 用户名/组织名和镜像名
+        push: false
+        tags: vcptoolbox-junior:ci
