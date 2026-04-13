@@ -72,7 +72,7 @@ RUN apk add --no-cache \
 ENV PYTHONPATH=/usr/src/app/pydeps
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# --- Copy esbuild bundle (to root, so __filename-relative paths resolve correctly) ---
+# --- Copy esbuild bundle ---
 COPY --from=build /usr/src/app/dist/vcp.bundle.js ./vcp.bundle.js
 
 # --- Copy full node_modules (plugins need runtime module resolution) ---
@@ -98,11 +98,28 @@ COPY --from=build /usr/src/app/config.env.example ./
 COPY --from=build /usr/src/app/maintain.js ./
 COPY --from=build /usr/src/app/package.json ./
 COPY --from=build /usr/src/app/python/requirements.txt ./python/
+COPY --from=build /usr/src/app/agent_map.json ./
 
 # Copy Python scripts in root (if any)
 COPY --from=build /usr/src/app/*.py ./
 
-# Create runtime directories
+# --- Persistence config & sync scripts ---
+COPY docker-persist.json ./
+COPY docker-entrypoint.sh /usr/local/bin/
+COPY build/docker-sync.js ./build/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# --- Save image defaults for entrypoint sync ---
+# On container update, entrypoint merges these into the data/ volume:
+#   plugin  → version-based smart upgrade, preserve user state
+#   merge   → add new files, never overwrite existing
+RUN mkdir -p /opt/defaults && \
+    cp -r Plugin  /opt/defaults/Plugin  && \
+    cp -r Agent   /opt/defaults/Agent   && \
+    cp -r TVStxt  /opt/defaults/TVStxt  && \
+    cp agent_map.json /opt/defaults/agent_map.json 2>/dev/null || true
+
+# Create runtime directories (used when running without data/ volume)
 RUN mkdir -p knowledge thinking VCPTimedContacts dailynote \
              VCPAsyncResults DebugLog VectorStore \
              Plugin/VCPLog/log Plugin/EmojiListGenerator/generated_lists
@@ -110,5 +127,5 @@ RUN mkdir -p knowledge thinking VCPTimedContacts dailynote \
 # Main server port + Admin panel port
 EXPOSE 6005 6006
 
-# Run the combined bundle (server + admin in one process)
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "vcp.bundle.js"]

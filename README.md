@@ -72,15 +72,20 @@ chmod +x VCPtoolbox
 ### 方式二：Docker
 
 ```bash
-# 使用 docker-compose
+# 使用 docker-compose（推荐）
 docker-compose up --build -d
 
 # 或直接拉取镜像
 docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
+mkdir -p data
 docker run -d -p 6005:6005 -p 6006:6006 \
-  -v ./config.env:/usr/src/app/config.env \
+  -v ./data:/usr/src/app/data \
   ghcr.io/fuhesummer/vcptoolbox-junior:latest
 ```
+
+> 只需挂载一个 `data/` 目录，所有用户数据（配置、插件、知识库、日记、向量索引等）自动持久化。
+> 首次启动从镜像同步默认配置；更新镜像时智能合并新插件，保留用户设置和启用状态。
+> 持久化路径定义在 `docker-persist.json`，详见文件内注释。
 
 ### 方式三：从源码运行
 

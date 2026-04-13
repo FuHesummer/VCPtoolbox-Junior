@@ -160,10 +160,14 @@ jobs:
 
             ```bash
             docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
+            mkdir -p data
             docker run -d -p 6005:6005 -p 6006:6006 \
-              -v ./config.env:/usr/src/app/config.env \
+              -v ./data:/usr/src/app/data \
               ghcr.io/fuhesummer/vcptoolbox-junior:latest
             ```
+
+            > 所有用户数据（插件、知识库、日记、向量索引、配置）自动持久化到 `data/` 目录。
+            > 首次启动从镜像同步默认配置；更新镜像时自动合并新插件，保留用户设置。
           draft: false
           prerelease: false
           files: |

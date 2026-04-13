@@ -8,21 +8,11 @@ services:
     environment:
       TZ: ${DEFAULT_TIMEZONE:-Asia/Shanghai}
     volumes:
-      # === Production mode (default) ===
-      # Mount config and persistent data only
-      - ./config.env:/usr/src/app/config.env
-      - ./knowledge:/usr/src/app/knowledge
-      - ./thinking:/usr/src/app/thinking
-      - ./dailynote:/usr/src/app/dailynote
-      - ./image:/usr/src/app/image
-      - ./VectorStore:/usr/src/app/VectorStore
-      - ./DebugLog:/usr/src/app/DebugLog
-
-      # === Development mode ===
-      # Uncomment below to mount entire source (overrides image content)
-      # - .:/usr/src/app
-      # - /usr/src/app/pydeps
-      # - /usr/src/app/node_modules
-      # - /usr/src/app/dist
-
+      # Single data/ directory for all persistent state.
+      # Entrypoint reads docker-persist.json and symlinks
+      # data/ contents into the app directory automatically.
+      # First run: image defaults are copied into data/.
+      # Container update: plugins get smart-merged (version compare),
+      # Agent/TVStxt get new files added, user state is preserved.
+      - ./data:/usr/src/app/data
     restart: unless-stopped

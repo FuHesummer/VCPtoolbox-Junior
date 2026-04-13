@@ -1,0 +1,21 @@
+{
+  "description": "Docker persistent paths — entrypoint reads this to symlink data/ volume into app",
+  "paths": [
+    { "path": "config.env",             "type": "file", "init": "config.env.example" },
+    { "path": "Plugin",                 "type": "dir",  "sync": "plugin" },
+    { "path": "Agent",                  "type": "dir",  "sync": "merge" },
+    { "path": "TVStxt",                 "type": "dir",  "sync": "merge" },
+    { "path": "knowledge",              "type": "dir" },
+    { "path": "thinking",               "type": "dir" },
+    { "path": "dailynote",              "type": "dir" },
+    { "path": "image",                  "type": "dir" },
+    { "path": "VectorStore",            "type": "dir" },
+    { "path": "DebugLog",               "type": "dir" },
+    { "path": "VCPTimedContacts",       "type": "dir" },
+    { "path": "VCPAsyncResults",        "type": "dir" },
+    { "path": "agent_map.json",         "type": "file", "sync": "merge" },
+    { "path": "ModelRedirect.json",     "type": "file" },
+    { "path": "preprocessor_order.json","type": "file" },
+    { "path": "ip_blacklist.json",      "type": "file" }
+  ]
+}
