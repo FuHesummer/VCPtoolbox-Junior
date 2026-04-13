@@ -6,12 +6,21 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
     "start:admin": "node adminServer.js",
-    "start:all": "node server.js & node adminServer.js"
+    "start:all": "node server.js & node adminServer.js",
+    "bundle": "node build/esbuild.config.js",
+    "package": "node build/package-sea.js",
+    "package:win": "node build/package-sea.js win32 x64",
+    "package:linux": "node build/package-sea.js linux x64",
+    "package:mac": "node build/package-sea.js darwin arm64"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "postject": "^1.0.0-alpha.6"
+  },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.22",
     "@mozilla/readability": "^0.6.0",
