@@ -45,10 +45,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install coreutils (macOS)
-        if: runner.os == 'macOS'
-        run: brew install coreutils
-
       - name: Install dependencies
         run: npm ci
 
@@ -156,15 +152,16 @@ jobs:
             "KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false" \
             > config.env
 
-          # Use gtimeout on macOS, timeout on Linux/Windows
-          TIMEOUT_CMD="timeout"
-          if command -v gtimeout &>/dev/null; then
-            TIMEOUT_CMD="gtimeout"
-          fi
-
-          # Start and capture output
+          # Start in background, wait, then check and kill
           echo "=== Starting ${{ matrix.exe }} ==="
-          $TIMEOUT_CMD 15 "./${{ matrix.exe }}" > startup.log 2>&1 || true
+          "./${{ matrix.exe }}" > startup.log 2>&1 &
+          PID=$!
+          sleep 12
+
+          # Kill the process (and any children)
+          kill $PID 2>/dev/null || true
+          sleep 1
+          kill -9 $PID 2>/dev/null || true
 
           echo "=== Startup log ==="
           cat startup.log
