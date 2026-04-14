@@ -219,3 +219,6 @@ Plugin/XiaohongshuFetch/config.env
 Plugin/.store-cache.json
 Plugin/.tree-cache.json
 Plugin/*/code.bin
+
+# 插件 npm install 产物（插件仓库协议不要求 commit lock）
+Plugin/*/package-lock.json
