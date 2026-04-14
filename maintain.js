@@ -236,10 +236,10 @@ function run() {
 
   let proc;
   if (cmd.runtime === 'python') {
+    // 不用 shell:true（避免 DEP0190）；node 分支早已无 shell，python 同样可由 PATH 直接解析
     proc = spawn('python', [scriptPath, ...extraArgs], {
       cwd: ROOT_DIR,
       stdio: 'inherit',
-      shell: true,
     });
   } else {
     proc = spawn('node', [scriptPath, ...extraArgs], {
