@@ -456,7 +456,13 @@ class RAGDiaryPlugin {
     }
 
     async getDiaryContent(characterName) {
-        const characterDirPath = path.join(dailyNoteRootPath, characterName);
+        let characterDirPath;
+        try {
+            const { resolveNotebookPath } = require('../../modules/notebookResolver');
+            characterDirPath = resolveNotebookPath(characterName, dailyNoteRootPath);
+        } catch {
+            characterDirPath = path.join(dailyNoteRootPath, characterName);
+        }
         let characterDiaryContent = `[${characterName}日记本内容为空]`;
         try {
             const files = await fs.readdir(characterDirPath);
@@ -2619,7 +2625,8 @@ class RAGDiaryPlugin {
      * 用于 V5 平衡召回逻辑
      */
     async _getTimeRangeFilePaths(dbName, timeRange) {
-        const characterDirPath = path.join(dailyNoteRootPath, dbName);
+        let characterDirPath;
+        try { const { resolveNotebookPath } = require('../../modules/notebookResolver'); characterDirPath = resolveNotebookPath(dbName, dailyNoteRootPath); } catch { characterDirPath = path.join(dailyNoteRootPath, dbName); }
         let filePathsInRange = [];
 
         if (!timeRange || !timeRange.start || !timeRange.end) return filePathsInRange;
@@ -2659,7 +2666,8 @@ class RAGDiaryPlugin {
 
     async getTimeRangeDiaries(dbName, timeRange) {
         // 此方法保留用于兼容旧逻辑，但 V5 逻辑已转向 _getTimeRangeFilePaths + getChunksByFilePaths
-        const characterDirPath = path.join(dailyNoteRootPath, dbName);
+        let characterDirPath;
+        try { const { resolveNotebookPath } = require('../../modules/notebookResolver'); characterDirPath = resolveNotebookPath(dbName, dailyNoteRootPath); } catch { characterDirPath = path.join(dailyNoteRootPath, dbName); }
         let diariesInRange = [];
 
         // 确保时间范围有效

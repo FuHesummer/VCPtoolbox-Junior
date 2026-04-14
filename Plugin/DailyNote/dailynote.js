@@ -305,10 +305,19 @@ async function handleCreateCommand(args) {
         const seconds = now.getSeconds().toString().padStart(2, '0');
         const timeStringForFile = `${hours}_${minutes}_${seconds}`;
 
-        const dirPath = path.join(dailyNoteRootPath, sanitizedFolderName);
+        let dirPath;
+        let fromResolver = false;
+        try {
+            const { resolveNotebookPath } = require('../../modules/notebookResolver');
+            dirPath = resolveNotebookPath(sanitizedFolderName, dailyNoteRootPath);
+            // If resolver returned a mapped path (Agent/*/diary etc), it's trusted
+            if (dirPath !== path.join(dailyNoteRootPath, sanitizedFolderName)) fromResolver = true;
+        } catch {
+            dirPath = path.join(dailyNoteRootPath, sanitizedFolderName);
+        }
 
-        // 🆕 安全检查：确保路径在 dailyNoteRootPath 内
-        if (!isPathWithinBase(dirPath, dailyNoteRootPath)) {
+        // 🆕 安全检查：resolver 映射路径已受信，仅检查 fallback 路径
+        if (!fromResolver && !isPathWithinBase(dirPath, dailyNoteRootPath)) {
             console.error(`[DailyNote] Path traversal attempt detected: ${dirPath}`);
             return {
                 status: "error",

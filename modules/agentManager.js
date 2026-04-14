@@ -37,10 +37,16 @@ class AgentManager {
         try {
             const mapContent = await fs.readFile(MAP_FILE, 'utf8');
             const mapJson = JSON.parse(mapContent);
-            
+
             this.agentMap.clear();
             for (const alias in mapJson) {
-                this.agentMap.set(alias, mapJson[alias]);
+                const value = mapJson[alias];
+                // Support both old format ("path.txt") and new format ({ prompt, notebooks })
+                if (typeof value === 'string') {
+                    this.agentMap.set(alias, value);
+                } else if (typeof value === 'object' && value.prompt) {
+                    this.agentMap.set(alias, value.prompt);
+                }
             }
 
             if (this.debugMode) {
@@ -48,6 +54,8 @@ class AgentManager {
             }
             // When the map changes, the entire prompt cache becomes potentially invalid.
             this.promptCache.clear();
+            // Also reload notebook resolver cache
+            try { require('./notebookResolver').reload(); } catch {}
             console.log('[AgentManager] Agent map reloaded and prompt cache cleared.');
 
         } catch (error) {

@@ -325,7 +325,8 @@ class AIMemoHandler {
         const projectBasePath = process.env.PROJECT_BASE_PATH;
         const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'knowledge') : path.join(__dirname, '..', '..', 'knowledge'));
 
-        const characterDirPath = path.join(dailyNoteRootPath, dbName);
+        let characterDirPath;
+        try { const { resolveNotebookPath } = require('../../modules/notebookResolver'); characterDirPath = resolveNotebookPath(dbName, dailyNoteRootPath); } catch { characterDirPath = path.join(dailyNoteRootPath, dbName); }
         const files = [];
 
         try {

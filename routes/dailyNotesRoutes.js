@@ -13,6 +13,37 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
     const router = express.Router();
 
     // ══════════════════════════════════════════════════
+    //  Notebook path resolver helper
+    //  Resolves folder names to absolute paths:
+    //    "Nova"          → knowledge/Nova/
+    //    "Aemeath/diary" → Agent/Aemeath/diary/
+    // ══════════════════════════════════════════════════
+    const VCP_ROOT = process.env.VCP_ROOT || path.join(__dirname, '..');
+    function resolveFolderPath(folderName) {
+        // Check if it's an Agent notebook path (contains "/")
+        if (folderName.includes('/')) {
+            try {
+                const { getNotebookEntries } = require('../modules/notebookResolver');
+                const entry = getNotebookEntries().find(e => e.displayName === folderName);
+                if (entry) return entry.path;
+            } catch {}
+            // Fallback: treat as Agent/<name>/<subdir>
+            const fullPath = path.join(VCP_ROOT, 'Agent', folderName);
+            return path.normalize(fullPath);
+        }
+        // Regular folder under knowledge/
+        return path.join(dailyNoteRootPath, folderName);
+    }
+
+    function isFolderPathSafe(resolvedPath) {
+        const norm = path.normalize(resolvedPath);
+        // Allow paths under dailyNoteRootPath, Agent/, or thinking/
+        return norm.startsWith(path.normalize(dailyNoteRootPath)) ||
+               norm.startsWith(path.normalize(path.join(VCP_ROOT, 'Agent'))) ||
+               norm.startsWith(path.normalize(path.join(VCP_ROOT, 'thinking')));
+    }
+
+    // ══════════════════════════════════════════════════
     //  搜索配置
     // ══════════════════════════════════════════════════
     const SEARCH_CONFIG = {
@@ -195,16 +226,26 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
         // 1. 收集所有待扫描文件（利用目录缓存）
         let foldersToSearch = [];
         if (folder) {
-            const specificPath = path.join(dailyNoteRootPath, folder);
-            if (!isPathSafe(specificPath, dailyNoteRootPath)) throw new Error('Path traversal detected');
+            const specificPath = resolveFolderPath(folder);
+            if (!isFolderPathSafe(specificPath)) throw new Error('Path traversal detected');
             foldersToSearch.push({ name: folder, path: specificPath, depth: 0 });
         } else {
-            const entries = await dirCache.getReaddir(dailyNoteRootPath);
-            for (const entry of entries) {
-                if (entry.isDirectory()) {
-                    foldersToSearch.push({ name: entry.name, path: path.join(dailyNoteRootPath, entry.name), depth: 0 });
+            // Scan shared knowledge/ folders
+            try {
+                const entries = await dirCache.getReaddir(dailyNoteRootPath);
+                for (const entry of entries) {
+                    if (entry.isDirectory()) {
+                        foldersToSearch.push({ name: entry.name, path: path.join(dailyNoteRootPath, entry.name), depth: 0 });
+                    }
                 }
-            }
+            } catch {}
+            // Also include Agent notebook directories
+            try {
+                const { getNotebookEntries } = require('../modules/notebookResolver');
+                for (const nb of getNotebookEntries()) {
+                    foldersToSearch.push({ name: nb.displayName, path: nb.path, depth: 0 });
+                }
+            } catch {}
         }
 
         for (const dir of foldersToSearch) {
@@ -461,37 +502,76 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
     //  以下为其他路由（folders / folder / note / move / delete 等）
     // ══════════════════════════════════════════════════
 
-    // GET /folders - 获取所有文件夹
+    // GET /folders - 获取所有文件夹（结构化分组 + 扁平列表向后兼容）
     router.get('/folders', async (req, res) => {
         try {
-            await fs.access(dailyNoteRootPath);
-            const entries = await fs.readdir(dailyNoteRootPath, { withFileTypes: true });
+            const folders = [];        // flat list (backward compat)
+            const publicFolders = [];  // knowledge/ shared dirs
+            const agentsMap = {};      // agentName → { notebooks: [] }
+            const thinkingFolders = []; // thinking cluster dirs
 
-            const folders = [];
-            for (const entry of entries) {
-                if (entry.isDirectory()) {
-                    const folderPath = path.join(dailyNoteRootPath, entry.name);
-                    if (!(await isSymlink(folderPath))) {
-                        folders.push(entry.name);
+            // 1. Shared knowledge/ folders → public
+            try {
+                await fs.access(dailyNoteRootPath);
+                const entries = await fs.readdir(dailyNoteRootPath, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory()) {
+                        const folderPath = path.join(dailyNoteRootPath, entry.name);
+                        if (!(await isSymlink(folderPath))) {
+                            folders.push(entry.name);
+                            publicFolders.push(entry.name);
+                        }
                     }
                 }
+            } catch (e) {
+                if (e.code !== 'ENOENT') throw e;
             }
-            res.json({ folders });
+
+            // 2. Agent notebook directories → grouped by agent + thinking
+            let notebookEntries = [];
+            try {
+                const { getNotebookEntries } = require('../modules/notebookResolver');
+                notebookEntries = getNotebookEntries();
+            } catch {}
+            for (const entry of notebookEntries) {
+                try { await fs.access(entry.path); } catch { continue; }
+                if (!folders.includes(entry.displayName)) {
+                    folders.push(entry.displayName);
+                }
+
+                if (entry.type === 'thinking') {
+                    thinkingFolders.push({
+                        displayName: entry.displayName,
+                        folderName: entry.displayName,
+                        agent: entry.agent,
+                    });
+                } else {
+                    if (!agentsMap[entry.agent]) {
+                        agentsMap[entry.agent] = { name: entry.agent, notebooks: [] };
+                    }
+                    agentsMap[entry.agent].notebooks.push({
+                        displayName: entry.displayName,
+                        folderName: entry.displayName,
+                        type: entry.type, // "diary" | "knowledge"
+                    });
+                }
+            }
+
+            // Build agents array sorted by name
+            const agents = Object.values(agentsMap).sort((a, b) => a.name.localeCompare(b.name));
+
+            res.json({ folders, agents, public: publicFolders, thinking: thinkingFolders });
         } catch (error) {
-            if (error.code === 'ENOENT') {
-                res.json({ folders: [] });
-            } else {
-                res.status(500).json({ error: 'Failed to list folders', details: error.message });
-            }
+            res.status(500).json({ error: 'Failed to list folders', details: error.message });
         }
     });
 
     // GET /folder/:folderName - 获取文件夹内的笔记
     router.get('/folder/:folderName', async (req, res) => {
         const folderName = req.params.folderName;
-        const specificFolderPath = path.join(dailyNoteRootPath, folderName);
+        const specificFolderPath = resolveFolderPath(folderName);
 
-        if (!isPathSafe(specificFolderPath, dailyNoteRootPath)) {
+        if (!isFolderPathSafe(specificFolderPath)) {
             return res.status(403).json({ error: 'Invalid folder path' });
         }
 
@@ -548,9 +628,10 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
     // GET /note/:folderName/:fileName - 获取笔记内容
     router.get('/note/:folderName/:fileName', async (req, res) => {
         const { folderName, fileName } = req.params;
-        const filePath = path.join(dailyNoteRootPath, folderName, fileName);
+        const resolvedFolder = resolveFolderPath(folderName);
+        const filePath = path.join(resolvedFolder, fileName);
 
-        if (!isPathSafe(filePath, dailyNoteRootPath)) {
+        if (!isFolderPathSafe(resolvedFolder)) {
             return res.status(403).json({ error: 'Invalid file path' });
         }
 
@@ -579,15 +660,14 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
         }
 
         if (folderName.includes('..') || fileName.includes('..') ||
-            folderName.includes('/') || fileName.includes('/') ||
-            folderName.includes('\\') || fileName.includes('\\')) {
+            fileName.includes('/') || fileName.includes('\\')) {
             return res.status(403).json({ error: 'Invalid folder or file name' });
         }
 
-        const targetFolderPath = path.join(dailyNoteRootPath, folderName);
+        const targetFolderPath = resolveFolderPath(folderName);
         const filePath = path.join(targetFolderPath, fileName);
 
-        if (!isPathSafe(filePath, dailyNoteRootPath)) {
+        if (!isFolderPathSafe(targetFolderPath)) {
             return res.status(403).json({ error: 'Invalid file path' });
         }
 
@@ -609,14 +689,14 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
             return res.status(400).json({ error: 'Invalid request body' });
         }
 
-        if (targetFolder.includes('..') || targetFolder.includes('/') || targetFolder.includes('\\')) {
+        if (targetFolder.includes('..')) {
             return res.status(403).json({ error: 'Invalid target folder name' });
         }
 
         const results = { moved: [], errors: [] };
-        const targetFolderPath = path.join(dailyNoteRootPath, targetFolder);
+        const targetFolderPath = resolveFolderPath(targetFolder);
 
-        if (!isPathSafe(targetFolderPath, dailyNoteRootPath)) {
+        if (!isFolderPathSafe(targetFolderPath)) {
             return res.status(403).json({ error: 'Invalid target folder path' });
         }
 
@@ -629,10 +709,11 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
                     continue;
                 }
 
-                const sourceFilePath = path.join(dailyNoteRootPath, note.folder, note.file);
+                const sourceFolderPath = resolveFolderPath(note.folder);
+                const sourceFilePath = path.join(sourceFolderPath, note.file);
                 const destinationFilePath = path.join(targetFolderPath, note.file);
 
-                if (!isPathSafe(sourceFilePath, dailyNoteRootPath) || !isPathSafe(destinationFilePath, dailyNoteRootPath)) {
+                if (!isFolderPathSafe(sourceFolderPath) || !isFolderPathSafe(targetFolderPath)) {
                     results.errors.push({ note: `${note.folder}/${note.file}`, error: 'Invalid path' });
                     continue;
                 }
@@ -677,8 +758,9 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
 
         const results = { deleted: [], errors: [] };
         for (const note of notesToDelete) {
-            const filePath = path.join(dailyNoteRootPath, note.folder, note.file);
-            if (!isPathSafe(filePath, dailyNoteRootPath)) {
+            const noteFolderPath = resolveFolderPath(note.folder);
+            const filePath = path.join(noteFolderPath, note.file);
+            if (!isFolderPathSafe(noteFolderPath)) {
                 results.errors.push({ note: `${note.folder}/${note.file}`, error: 'Invalid path' });
                 continue;
             }
@@ -699,8 +781,8 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
         const { folderName } = req.body;
         if (!folderName) return res.status(400).json({ error: 'Folder name required' });
 
-        const targetFolderPath = path.join(dailyNoteRootPath, folderName);
-        if (!isPathSafe(targetFolderPath, dailyNoteRootPath) || targetFolderPath === path.resolve(dailyNoteRootPath)) {
+        const targetFolderPath = resolveFolderPath(folderName);
+        if (!isFolderPathSafe(targetFolderPath) || targetFolderPath === path.resolve(dailyNoteRootPath)) {
             return res.status(403).json({ error: 'Forbidden' });
         }
 
@@ -736,9 +818,13 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
             return res.status(400).json({ error: 'sourceFilePath is required' });
         }
 
-        // 安全检查
-        const fullPath = path.join(dailyNoteRootPath, sourceFilePath);
-        if (!isPathSafe(fullPath, dailyNoteRootPath)) {
+        // 安全检查：sourceFilePath 格式可能是 "folderName/fileName" 或 "Agent/Name/diary/fileName"
+        const parts = sourceFilePath.split('/');
+        const fileName = parts.pop();
+        const folderPart = parts.join('/');
+        const resolvedFolder = folderPart ? resolveFolderPath(folderPart) : dailyNoteRootPath;
+        const fullPath = path.join(resolvedFolder, fileName);
+        if (!isFolderPathSafe(resolvedFolder)) {
             return res.status(403).json({ error: 'Invalid file path' });
         }
 

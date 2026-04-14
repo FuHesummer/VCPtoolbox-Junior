@@ -360,7 +360,13 @@ async function writeDiary(maidName, dateString, contentText, fileName) {
     const seconds = now.getSeconds().toString().padStart(2, '0');
     const timeStringForFile = `${hours}_${minutes}_${seconds}`;
 
-    const dirPath = path.join(dailyNoteRootPath, sanitizedFolderName);
+    let dirPath;
+    try {
+        const { resolveNotebookPath } = require('../../modules/notebookResolver');
+        dirPath = resolveNotebookPath(sanitizedFolderName, dailyNoteRootPath);
+    } catch {
+        dirPath = path.join(dailyNoteRootPath, sanitizedFolderName);
+    }
 
     // 可选字段：将 fileName 作为后缀拼接到时间戳文件名后
     let sanitizedOptionalFileName = '';
