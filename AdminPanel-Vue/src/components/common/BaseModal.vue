@@ -57,6 +57,12 @@ function close() {
   flex-direction: column;
   padding: 0;
   overflow: hidden;
+  // 覆盖 .card 的半透明白 — 改用奶油白不透明底，避免透出蒙层变灰扑扑
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 10px 40px rgba(180, 120, 140, 0.18);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .modal-header {
@@ -65,6 +71,7 @@ function close() {
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(135deg, rgba(212, 116, 142, 0.06), transparent);
 
   h3 {
     margin: 0;

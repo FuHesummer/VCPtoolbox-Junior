@@ -71,12 +71,27 @@ function normalizeQuotaItem(item = {}) {
 }
 
 function normalizeLogItem(item = {}) {
+    // 缓存命中 token 数 — NewAPI 不同版本字段名不同，兼容 3 种
+    const cacheHit = safeNumber(
+        item.prompt_cache_hit_tokens
+        ?? item.cached_tokens
+        ?? (item.prompt_tokens_details && item.prompt_tokens_details.cached_tokens)
+        ?? 0,
+        0
+    );
     return {
         created_at: normalizeUnixTimestamp(item.created_at, 0),
         model_name: typeof item.model_name === 'string' ? item.model_name : '',
         prompt_tokens: safeNumber(item.prompt_tokens, 0),
         completion_tokens: safeNumber(item.completion_tokens, 0),
-        quota: safeNumber(item.quota, 0)
+        quota: safeNumber(item.quota, 0),
+        // 新增多维度字段（用于按 key/user/channel 分组）
+        token_name: typeof item.token_name === 'string' ? item.token_name : '',
+        username: typeof item.username === 'string' ? item.username : '',
+        channel_name: typeof item.channel_name === 'string' ? item.channel_name : '',
+        channel_id: safeNumber(item.channel_id, 0),
+        // 缓存命中（用于计算命中率）
+        cache_hit_tokens: cacheHit
     };
 }
 
@@ -207,11 +222,20 @@ function createMonitorClient(debugMode) {
     });
 }
 
-async function fetchAllConsumeLogs(client, { startTimestamp, endTimestamp, modelName }) {
+async function fetchAllConsumeLogs(client, { startTimestamp, endTimestamp, modelName, maxPages, deadline }) {
     const logItems = [];
+    const pageLimit = Math.min(safeNumber(maxPages, MAX_LOG_PAGES), MAX_LOG_PAGES);
+    let truncated = false;
 
     for (let page = 1; ; page += 1) {
-        if (page > MAX_LOG_PAGES) {
+        if (page > pageLimit) {
+            truncated = true;
+            break;
+        }
+        // 全局 deadline 检查（毫秒时间戳）
+        if (deadline && Date.now() > deadline) {
+            console.warn(`[NewApiMonitor] fetchAllConsumeLogs deadline reached at page ${page}`);
+            truncated = true;
             break;
         }
 
@@ -233,6 +257,8 @@ async function fetchAllConsumeLogs(client, { startTimestamp, endTimestamp, model
         }
     }
 
+    // 标记是否被截断（外层用于提示）
+    logItems._truncated = truncated;
     return logItems;
 }
 
@@ -341,7 +367,9 @@ function buildModelItemsFromLogs(logItems) {
                 model_name: modelName,
                 requests: 0,
                 token_used: 0,
-                quota: 0
+                quota: 0,
+                prompt_tokens: 0,
+                cache_hit_tokens: 0
             });
         }
 
@@ -349,9 +377,47 @@ function buildModelItemsFromLogs(logItems) {
         bucket.requests += 1;
         bucket.token_used += logItem.prompt_tokens + logItem.completion_tokens;
         bucket.quota += logItem.quota;
+        bucket.prompt_tokens += logItem.prompt_tokens;
+        bucket.cache_hit_tokens += logItem.cache_hit_tokens;
+    }
+
+    // 计算命中率（百分比，0~100）
+    for (const bucket of modelMap.values()) {
+        bucket.cache_hit_rate = bucket.prompt_tokens > 0
+            ? (bucket.cache_hit_tokens / bucket.prompt_tokens) * 100
+            : 0;
     }
 
     return sortModelItems(Array.from(modelMap.values()));
+}
+
+// 通用：按指定维度从日志聚合（key/user/channel）
+// dimensionField: 'token_name' | 'username' | 'channel_name'
+// resultLabel: 输出对象的字段名（如 'token_name'）
+function buildDimensionItemsFromLogs(logItems, dimensionField, resultLabel) {
+    const map = new Map();
+    for (const logItem of logItems) {
+        const key = logItem[dimensionField] || '(unknown)';
+        if (!map.has(key)) {
+            map.set(key, {
+                [resultLabel]: key,
+                requests: 0,
+                token_used: 0,
+                quota: 0
+            });
+        }
+        const bucket = map.get(key);
+        bucket.requests += 1;
+        bucket.token_used += logItem.prompt_tokens + logItem.completion_tokens;
+        bucket.quota += logItem.quota;
+    }
+    // 复用 sortModelItems 排序逻辑（按 requests/tokens/quota 降序）— 但需要适配字段
+    return Array.from(map.values()).sort((a, b) => {
+        if (b.requests !== a.requests) return b.requests - a.requests;
+        if (b.token_used !== a.token_used) return b.token_used - a.token_used;
+        if (b.quota !== a.quota) return b.quota - a.quota;
+        return String(a[resultLabel]).localeCompare(String(b[resultLabel]));
+    });
 }
 
 function buildSummaryPayload(trendItems, realtimeStatBody) {
@@ -460,6 +526,65 @@ module.exports = function newApiMonitorRoutes(options) {
             });
         } catch (error) {
             handleRouteError('models', error, res);
+        }
+    });
+
+    // 多维度聚合 — 一次拉日志返回 4 个维度（强制走 consume_logs，因为 quota_data 没有 key 信息）
+    // 默认限制 20 页（2000 条）+ 25s deadline，避免拉全量造成前端长时间挂起
+    // 通过 query 参数 ?pages=200 可解锁全量
+    router.get('/newapi-monitor/dimensions', async (req, res) => {
+        try {
+            const { startTimestamp, endTimestamp } = getTimeRangeFromQuery(req.query);
+            const modelName = getModelNameFromQuery(req.query);
+            const requestedPages = safeNumber(req.query.pages, 20);
+            const deadline = Date.now() + 25_000;   // 25s 全局超时
+            const client = createMonitorClient(debugMode);
+
+            // 强制走日志路径以拿到 key/user/channel 信息
+            const logItems = await fetchAllConsumeLogs(client, {
+                startTimestamp, endTimestamp, modelName,
+                maxPages: requestedPages,
+                deadline,
+            });
+            const truncated = !!logItems._truncated;
+
+            // 模型 × Key 交叉聚合（用于"该模型下各 Key 占比"视图）
+            const modelKeyMap = new Map();   // modelName -> Map(token_name -> stats)
+            for (const log of logItems) {
+                const m = log.model_name || '(unknown)';
+                const k = log.token_name || '(unknown)';
+                if (!modelKeyMap.has(m)) modelKeyMap.set(m, new Map());
+                const inner = modelKeyMap.get(m);
+                if (!inner.has(k)) inner.set(k, { token_name: k, requests: 0, token_used: 0, quota: 0 });
+                const stat = inner.get(k);
+                stat.requests += 1;
+                stat.token_used += log.prompt_tokens + log.completion_tokens;
+                stat.quota += log.quota;
+            }
+            const modelKeyMatrix = {};
+            for (const [m, inner] of modelKeyMap.entries()) {
+                modelKeyMatrix[m] = Array.from(inner.values()).sort((a, b) => b.requests - a.requests);
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    source: 'consume_logs',
+                    start_timestamp: startTimestamp,
+                    end_timestamp: endTimestamp,
+                    model_name: modelName || null,
+                    log_count: logItems.length,
+                    truncated,
+                    page_limit: requestedPages,
+                    models: buildModelItemsFromLogs(logItems),
+                    keys: buildDimensionItemsFromLogs(logItems, 'token_name', 'token_name'),
+                    users: buildDimensionItemsFromLogs(logItems, 'username', 'username'),
+                    channels: buildDimensionItemsFromLogs(logItems, 'channel_name', 'channel_name'),
+                    model_key_matrix: modelKeyMatrix
+                }
+            });
+        } catch (error) {
+            handleRouteError('dimensions', error, res);
         }
     });
 

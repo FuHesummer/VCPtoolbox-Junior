@@ -33,6 +33,32 @@ export interface NewApiModelItem {
   requests: number
   token_used: number
   quota: number
+  // 缓存（仅 dimensions 端点返回 — quota_data 路径无此字段）
+  prompt_tokens?: number
+  cache_hit_tokens?: number
+  cache_hit_rate?: number     // 0~100 百分比
+}
+
+// 多维度聚合 — 通用项（不同维度字段名不同：token_name / username / channel_name）
+export interface NewApiDimensionItem {
+  token_name?: string
+  username?: string
+  channel_name?: string
+  model_name?: string
+  requests: number
+  token_used: number
+  quota: number
+}
+
+export interface NewApiDimensionsData {
+  source: string
+  log_count: number
+  models: NewApiModelItem[]
+  keys: NewApiDimensionItem[]
+  users: NewApiDimensionItem[]
+  channels: NewApiDimensionItem[]
+  // 模型 × Key 交叉矩阵（key 是模型名，value 是该模型下各 key 的请求统计）
+  model_key_matrix: Record<string, NewApiDimensionItem[]>
 }
 
 type Resp<T> = { success: boolean; data: T; error?: string }
@@ -62,6 +88,15 @@ export function getNewApiTrend(params: NewApiQueryParams = {}) {
 export function getNewApiModels(params: NewApiQueryParams = {}) {
   return apiFetch<Resp<{ items: NewApiModelItem[] }>>(
     `/admin_api/newapi-monitor/models?${qs(params)}`,
+    { suppressErrorToast: true },
+  )
+}
+
+// 多维度聚合 — 强制走 consume_logs（quota_data 没有 key 信息）
+// 拉取较慢，前端按需调用
+export function getNewApiDimensions(params: NewApiQueryParams = {}) {
+  return apiFetch<Resp<NewApiDimensionsData>>(
+    `/admin_api/newapi-monitor/dimensions?${qs(params)}`,
     { suppressErrorToast: true },
   )
 }

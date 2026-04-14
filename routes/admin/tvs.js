@@ -37,12 +37,16 @@ module.exports = function(options) {
         }
     });
 
-    // POST save specific TVS file content
+    // POST save specific TVS file content (新建/覆盖)
     router.post('/tvsvars/:fileName', async (req, res) => {
         const { fileName } = req.params;
         const { content } = req.body;
         if (!fileName.toLowerCase().endsWith('.txt')) {
             return res.status(400).json({ error: 'Invalid file name.' });
+        }
+        // 路径穿越防护
+        if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+            return res.status(403).json({ error: 'Invalid file name.' });
         }
         if (typeof content !== 'string') return res.status(400).json({ error: 'Invalid request body.' });
         const filePath = path.join(TVS_FILES_DIR, fileName);
@@ -52,6 +56,25 @@ module.exports = function(options) {
             res.json({ message: `TVS file '${fileName}' saved successfully.` });
         } catch (error) {
             res.status(500).json({ error: 'Failed to save TVS file', details: error.message });
+        }
+    });
+
+    // DELETE specific TVS file
+    router.delete('/tvsvars/:fileName', async (req, res) => {
+        const { fileName } = req.params;
+        if (!fileName.toLowerCase().endsWith('.txt')) {
+            return res.status(400).json({ error: 'Invalid file name.' });
+        }
+        if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+            return res.status(403).json({ error: 'Invalid file name.' });
+        }
+        const filePath = path.join(TVS_FILES_DIR, fileName);
+        try {
+            await fs.unlink(filePath);
+            res.json({ message: `TVS file '${fileName}' deleted successfully.` });
+        } catch (error) {
+            if (error.code === 'ENOENT') res.status(404).json({ error: 'TVS file not found.' });
+            else res.status(500).json({ error: 'Failed to delete TVS file', details: error.message });
         }
     });
 

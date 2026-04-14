@@ -16,3 +16,4 @@
 | 2026-04-14 | 019d8ac0 | — | feat(backend): 插件商店 UI 扩展字段 + Agent 头像 API | 2 | 0 | low |
 | 2026-04-14 | 019d8ac1 | — | chore(scripts): AdminPanel-Vue 源码同步脚本 | 1 | 0 | low |
 | 2026-04-14 | e3a38d35 | — | feat(panel): AdminPanel Vue 多页面表单化重构 + 数据/UI/协议 bug 修复 | 11 | 14 | high |
+| 2026-04-14 | 019d8ba0 | — | feat(panel): Toolbox/TVS/Notes/NewAPI 深度重构 + 后端多维聚合 | 12 | 6 | high |

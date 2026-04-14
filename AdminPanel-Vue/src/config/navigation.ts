@@ -31,7 +31,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: '全局配置', route: 'base-config', icon: 'settings' },
       { title: 'Agent 管理', route: 'agents', icon: 'smart_toy' },
       { title: '变量编辑器', route: 'tvs', icon: 'data_object' },
-      { title: '工具列表编辑', route: 'tool-list-editor', icon: 'list_alt' },
       { title: 'Toolbox 管理', route: 'toolbox', icon: 'build' },
     ],
   },

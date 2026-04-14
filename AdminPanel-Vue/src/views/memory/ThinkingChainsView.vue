@@ -233,8 +233,28 @@
                     <span class="material-symbols-outlined">hub</span>
                     可用思维簇
                   </h3>
-                  <span class="sub-count">{{ availableToAdd.length }} 可加</span>
+                  <span class="sub-count">
+                    {{ filteredAvailable.length }}<span v-if="clusterSearch">/ {{ availableToAdd.length }}</span> 可加
+                  </span>
                 </header>
+
+                <div class="cluster-search-bar">
+                  <span class="material-symbols-outlined">search</span>
+                  <input
+                    v-model="clusterSearch"
+                    type="text"
+                    placeholder="搜索思维簇名..."
+                    class="cluster-search-input"
+                  />
+                  <button
+                    v-if="clusterSearch"
+                    class="clear-btn"
+                    title="清除"
+                    @click="clusterSearch = ''"
+                  >
+                    <span class="material-symbols-outlined">close</span>
+                  </button>
+                </div>
 
                 <div class="avail-body">
                   <div v-if="availableClusters.length === 0" class="empty-clusters">
@@ -243,17 +263,20 @@
                   </div>
                   <div v-else class="cluster-chips">
                     <button
-                      v-for="c in availableToAdd"
+                      v-for="c in filteredAvailable"
                       :key="c"
                       type="button"
                       class="chip avail"
                       @click="addStep(c)"
                     >
-                      <code>{{ c }}</code>
+                      <code v-html="highlightMatch(c, clusterSearch)" />
                       <span class="material-symbols-outlined">add</span>
                     </button>
                     <span v-if="!availableToAdd.length" class="all-added">
                       ✨ 所有可用簇都已加入当前链
+                    </span>
+                    <span v-else-if="!filteredAvailable.length" class="all-added">
+                      🔍 没有匹配 "{{ clusterSearch }}" 的簇
                     </span>
                   </div>
                 </div>
@@ -367,6 +390,7 @@ const rawJson = ref('')
 const rawMode = ref(false)
 const loading = ref(false)
 const availableClusters = ref<string[]>([])
+const clusterSearch = ref('')
 const activeChain = ref<string>('')
 const dragIndex = ref<number | null>(null)
 const dropHint = ref<{ at: number; where: 'before' | 'after' } | null>(null)
@@ -380,6 +404,24 @@ const availableToAdd = computed(() => {
   const inChain = new Set(currentClusters.value)
   return availableClusters.value.filter((c) => !inChain.has(c))
 })
+
+const filteredAvailable = computed(() => {
+  const kw = clusterSearch.value.trim().toLowerCase()
+  if (!kw) return availableToAdd.value
+  return availableToAdd.value.filter((c) => c.toLowerCase().includes(kw))
+})
+
+function highlightMatch(text: string, kw: string): string {
+  const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+  if (!kw.trim()) return escapeHtml(text)
+  const safeKw = kw.trim().toLowerCase()
+  const lower = text.toLowerCase()
+  const idx = lower.indexOf(safeKw)
+  if (idx < 0) return escapeHtml(text)
+  return escapeHtml(text.slice(0, idx)) +
+    `<mark>${escapeHtml(text.slice(idx, idx + safeKw.length))}</mark>` +
+    escapeHtml(text.slice(idx + safeKw.length))
+}
 
 const activeDescription = computed({
   get: () => data.value.chains[activeChain.value]?.description || '',
@@ -1215,10 +1257,54 @@ onMounted(reload)
   }
 }
 
+// 思维簇搜索栏
+.cluster-search-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  margin: 0 14px 8px;
+  background: var(--accent-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  transition: border-color 0.15s;
+
+  &:focus-within { border-color: var(--button-bg); }
+
+  > .material-symbols-outlined { font-size: 16px; color: var(--secondary-text); }
+
+  .cluster-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--primary-text);
+    padding: 2px 0;
+    &::placeholder { color: var(--secondary-text); }
+  }
+
+  .clear-btn {
+    background: transparent; border: none; cursor: pointer;
+    padding: 2px; border-radius: 50%;
+    color: var(--secondary-text);
+    display: inline-flex; align-items: center;
+    &:hover { background: var(--bg-color); color: var(--primary-text); }
+    .material-symbols-outlined { font-size: 14px; }
+  }
+}
+
 .cluster-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+
+  // 高亮匹配（v-html mark 标签）
+  :deep(mark) {
+    background: rgba(255, 200, 80, 0.4);
+    color: inherit;
+    padding: 0 1px;
+    border-radius: 2px;
+    font-weight: 600;
+  }
 
   .all-added {
     font-size: 11px;

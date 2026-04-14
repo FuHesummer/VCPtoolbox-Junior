@@ -25,8 +25,9 @@ const routes: RouteRecordRaw[] = [
       { path: 'base-config', name: 'base-config', component: () => import('@/views/config/BaseConfigView.vue'), meta: { group: 'config', title: '全局配置' } },
       { path: 'agents', name: 'agents', component: () => import('@/views/config/AgentManagerView.vue'), meta: { group: 'config', title: 'Agent 管理' } },
       { path: 'tvs', name: 'tvs', component: () => import('@/views/config/TvsEditorView.vue'), meta: { group: 'config', title: '变量编辑器' } },
-      { path: 'tool-list-editor', name: 'tool-list-editor', component: () => import('@/views/config/ToolListEditorView.vue'), meta: { group: 'config', title: '工具列表编辑' } },
       { path: 'toolbox', name: 'toolbox', component: () => import('@/views/config/ToolboxManagerView.vue'), meta: { group: 'config', title: 'Toolbox 管理' } },
+      // tool-list-editor 已合并到 Toolbox 管理（顶部「从插件生成」按钮）
+      { path: 'tool-list-editor', redirect: { name: 'toolbox' } },
 
       // 记忆系统
       { path: 'diary', name: 'diary', component: () => import('@/views/memory/NotesManagerView.vue'), props: { mode: 'diary' }, meta: { group: 'memory', title: '日记管理' } },
