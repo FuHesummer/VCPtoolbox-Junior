@@ -211,6 +211,9 @@ async function listRemote() {
                     pluginType: manifest.pluginType || 'unknown',
                     // 插件间依赖声明（详见 docs/PLUGIN_PROTOCOL.md "插件间依赖"）
                     requires: Array.isArray(manifest.requires) ? manifest.requires : [],
+                    // UI 扩展协议（前端商店卡片据此显示小图标）
+                    dashboardCards: Array.isArray(manifest.dashboardCards) ? manifest.dashboardCards : undefined,
+                    adminNav: (manifest.adminNav && typeof manifest.adminNav === 'object') ? manifest.adminNav : undefined,
                     sha: file.sha
                 };
             })

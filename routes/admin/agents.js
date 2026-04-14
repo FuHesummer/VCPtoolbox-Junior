@@ -119,5 +119,95 @@ module.exports = function(options) {
         }
     });
 
+    // ====== Agent 头像 ======
+    // 存储路径：<AGENT_FILES_DIR>/_avatars/<alias>.<ext>
+    // 上传用 base64 via JSON（轻量，无需 multer），适合头像这种小图
+    const AVATAR_DIR = path.join(AGENT_FILES_DIR, '_avatars');
+    const ALLOWED_AVATAR_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+
+    function sanitizeAlias(alias) {
+        // 防路径穿越 — 仅允许字母数字中文和常见符号
+        return String(alias || '').replace(/[\/\\:*?"<>|\x00-\x1f]/g, '').trim();
+    }
+
+    async function findAvatarFile(alias) {
+        const safe = sanitizeAlias(alias);
+        if (!safe) return null;
+        for (const ext of ALLOWED_AVATAR_EXT) {
+            const p = path.join(AVATAR_DIR, `${safe}.${ext}`);
+            try { await fs.access(p); return { path: p, ext }; } catch { /* continue */ }
+        }
+        return null;
+    }
+
+    // GET avatar — 返回图片字节流，找不到返回 404
+    router.get('/agents/:alias/avatar', async (req, res) => {
+        try {
+            const hit = await findAvatarFile(req.params.alias);
+            if (!hit) return res.status(404).end();
+            const mime = hit.ext === 'svg' ? 'image/svg+xml'
+                : hit.ext === 'jpg' ? 'image/jpeg'
+                : `image/${hit.ext}`;
+            res.setHeader('Content-Type', mime);
+            res.setHeader('Cache-Control', 'no-cache');
+            const buf = await fs.readFile(hit.path);
+            res.end(buf);
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to read avatar', details: error.message });
+        }
+    });
+
+    // POST avatar — body { data: "data:image/png;base64,..." } 或 { data: "纯 base64", ext: "png" }
+    router.post('/agents/:alias/avatar', async (req, res) => {
+        try {
+            const alias = sanitizeAlias(req.params.alias);
+            if (!alias) return res.status(400).json({ error: 'Invalid alias' });
+            const { data } = req.body || {};
+            if (typeof data !== 'string') return res.status(400).json({ error: 'Missing image data' });
+
+            // 解析 data URL
+            let ext = (req.body.ext || '').toLowerCase().replace('.', '');
+            let base64 = data;
+            const m = /^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/.exec(data);
+            if (m) {
+                ext = m[1].toLowerCase();
+                base64 = m[2];
+            }
+            if (ext === 'jpeg') ext = 'jpg';
+            if (!ALLOWED_AVATAR_EXT.includes(ext)) {
+                return res.status(400).json({ error: `Unsupported image ext: ${ext}` });
+            }
+
+            const buf = Buffer.from(base64, 'base64');
+            // 大小限制：2MB
+            if (buf.length > 2 * 1024 * 1024) {
+                return res.status(413).json({ error: 'Avatar too large (max 2MB)' });
+            }
+
+            // 删除该 alias 之前其它扩展名的头像
+            const existing = await findAvatarFile(alias);
+            if (existing) { try { await fs.unlink(existing.path); } catch { /* ignore */ } }
+
+            await fs.mkdir(AVATAR_DIR, { recursive: true });
+            const target = path.join(AVATAR_DIR, `${alias}.${ext}`);
+            await fs.writeFile(target, buf);
+            res.json({ message: 'Avatar saved', ext, size: buf.length });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to save avatar', details: error.message });
+        }
+    });
+
+    // DELETE avatar
+    router.delete('/agents/:alias/avatar', async (req, res) => {
+        try {
+            const hit = await findAvatarFile(req.params.alias);
+            if (!hit) return res.status(404).json({ error: 'No avatar' });
+            await fs.unlink(hit.path);
+            res.json({ message: 'Avatar removed' });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to delete avatar', details: error.message });
+        }
+    });
+
     return router;
 };
