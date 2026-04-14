@@ -40,22 +40,47 @@ Node.js 核心的 AI 中间层，采用**扁平化根目录运行结构**（无 
 
 ```text
 VCPtoolbox-Junior/
-├── server.js               # 主 HTTP/SSE 入口与启动编排
-├── Plugin.js               # 插件生命周期、加载与执行总控
-├── WebSocketServer.js      # 分布式节点与工具桥接
-├── KnowledgeBaseManager.js # RAG/标签/向量索引总控
-├── maintain.js             # 维护脚本统一入口
-├── modules/                # 所有后端模块（含辅助算法模块）
-├── routes/                 # Express 路由层
-├── scripts/                # 维护/修复脚本
-├── Plugin/                 # 插件目录（8个核心插件）
-├── AdminPanel/             # 内嵌静态管理前端
-├── rust-vexus-lite/        # Rust N-API 向量索引子项目
-├── Agent/                  # Agent 提示词文件
-├── TVStxt/                 # TVS 变量文件
-├── dailynote/              # 运行数据/知识内容（非源码）
-├── docs/                   # 上游文档（参考）
-└── image/                  # 运行期媒体资源（非源码）
+├── server.js                 # 主 HTTP/SSE 入口与启动编排
+├── adminServer.js            # 管理面板独立进程（端口 6006）
+├── Plugin.js                 # 插件生命周期、加载与执行总控
+├── maintain.js               # 维护脚本统一入口
+├── agent_map.json            # Agent 别名映射（旧格式 = 字符串，新格式 = {prompt, notebooks}）
+├── plugin-ui-prefs.json      # AdminPanel UI 扩展开关（按插件独立）
+├── docker-persist.json       # Docker 持久化目录定义
+│
+├── modules/                  # 所有后端模块（含向量引擎总控、分布式、算法层）
+│   ├── KnowledgeBaseManager.js   # RAG/标签/向量索引总控（移自上游根目录）
+│   ├── WebSocketServer.js        # 分布式节点与工具桥接（移自上游根目录）
+│   ├── TagMemoEngine.js          # 浪潮 V8 有向共现 + 测地线重排
+│   ├── notebookResolver.js       # Agent notebook 路径解析（兼容旧/新 agent_map 格式）
+│   ├── panelUpdater.js           # AdminPanel 自动更新器
+│   ├── pluginStore.js            # 插件商店逻辑（含依赖解析）
+│   └── rag_params.json           # RAG 热参数（权威位置，AdminPanel 写入）
+│
+├── routes/                   # Express 路由层
+│   └── admin/                # 管理面板 API（/admin_api/*）
+│
+├── scripts/                  # 维护/修复脚本（由 maintain.js 调度）
+├── build/                    # SEA 单可执行文件打包脚本
+├── Plugin/                   # 插件目录（9 个核心 + 商店安装的第三方）
+├── AdminPanel/               # 内嵌静态前端（同步自 VCPtoolbox-Junior-Panel 仓库）
+├── rust-vexus-lite/          # Rust N-API 向量索引子项目
+│
+├── Agent/                    # Agent 数据根目录
+│   └── <AgentName>/
+│       ├── <AgentName>.txt   # Agent 提示词
+│       ├── diary/            # 该 Agent 的个人日记
+│       └── knowledge/        # 该 Agent 的专属知识库
+│
+├── knowledge/                # 公共知识库（所有 Agent 共享；"公共*" 子目录会被梦系统扫描）
+├── thinking/                 # 思维簇目录（AI 元自学习产物）
+├── TVStxt/                   # TVS 变量文件
+│
+├── docs/                     # 内部文档（协议 / 架构 / API / 记忆系统）
+├── data/                     # Docker 持久化目录（由 docker-persist.json 定义）
+├── image/                    # 运行期媒体资源（非源码）
+├── DebugLog/                 # 服务日志轮转
+└── .file_cache/              # 跨节点文件拉取缓存
 ```
 
 ## 快速定位
@@ -113,7 +138,7 @@ VCPtoolbox-Junior/
 ## 禁止事项
 
 - **不要**提交真实密钥（`config.env`、插件私有配置）
-- **不要**把 `dailynote/`、`image/`、插件 `state/` 当作源码模块
+- **不要**把 `knowledge/`、`Agent/*/diary`、`image/`、插件 `state/` 当作源码模块
 - **不要**随意修改 plugin manifest 关键字段（加载器依赖 schema）
 - **不要**直接去掉 `.block` 启用插件，先确认依赖与配置完整
 - **不要**新增 `spawn(..., shell: true)` 路径，除非有严格输入约束和鉴权

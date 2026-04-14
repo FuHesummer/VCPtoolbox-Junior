@@ -131,24 +131,71 @@ node build/package-sea.js win32 x64
 
 ```
 VCPtoolbox-Junior/
-├── server.js              # 主服务入口
-├── adminServer.js         # 管理面板独立进程
-├── Plugin.js              # 插件生命周期总控
-├── maintain.js            # 维护脚本入口
-├── modules/               # 后端核心模块
-│   ├── KnowledgeBaseManager.js   # 向量库/RAG 总控
-│   ├── TagMemoEngine.js          # 浪潮 V8 算法
-│   ├── EPAModule.js              # 嵌入投影分析
-│   ├── ResidualPyramid.js        # 残差金字塔
-│   ├── WebSocketServer.js        # 分布式通信
+├── server.js                      # 主服务入口（端口 6005）
+├── adminServer.js                 # 管理面板独立进程（端口 6006）
+├── Plugin.js                      # 插件生命周期总控
+├── maintain.js                    # 维护脚本统一入口
+├── config.env                     # 全局配置（复制自 .example，含密钥）
+├── config.env.example             # 配置模板
+├── agent_map.json                 # Agent 别名 → 提示词映射
+├── docker-persist.json            # Docker 持久化目录定义
+├── plugin-ui-prefs.json           # AdminPanel UI 扩展开关（按插件独立）
+│
+├── modules/                       # 后端核心模块
+│   ├── KnowledgeBaseManager.js    # 向量库/RAG 总控
+│   ├── TagMemoEngine.js           # 浪潮 V8 算法
+│   ├── EPAModule.js               # 嵌入投影分析
+│   ├── ResidualPyramid.js         # 残差金字塔
+│   ├── WebSocketServer.js         # 分布式通信
+│   ├── agentManager.js            # Agent 映射热重载
+│   ├── notebookResolver.js        # Agent 日记/知识库路径解析
+│   ├── panelUpdater.js            # AdminPanel 自动更新器
+│   ├── pluginStore.js             # 插件商店逻辑（含依赖解析）
+│   ├── rag_params.json            # RAG 热参数（AdminPanel 可改，权威位置）
 │   └── ...
-├── Plugin/                # 插件目录（动态扫描）
-├── routes/                # API 路由
-├── AdminPanel/            # 管理前端
-├── rust-vexus-lite/       # Rust 向量引擎
-├── Agent/                 # Agent 提示词文件
-├── dailynote/             # 日记数据
-└── docs/                  # 文档
+│
+├── Plugin/                        # 插件目录（动态扫描）
+│   ├── ContextFoldingV2/          # 上下文折叠
+│   ├── DailyHot/                  # 每日热榜
+│   ├── DailyNote*/                # 日记系统套件
+│   ├── LightMemo/                 # 轻量回忆
+│   ├── RAGDiaryPlugin/            # 日记 RAG
+│   ├── UserAuth/                  # 用户认证
+│   ├── VCPLog/                    # 日志推送
+│   └── ...                        # 商店安装的第三方插件
+│
+├── routes/                        # Express API 路由
+│   ├── admin/                     # 管理面板 API（/admin_api/*）
+│   ├── adminPanelRoutes.js        # 管理面板路由挂载
+│   ├── dailyNotesRoutes.js        # 日记 API（路径穿越防护 + 队列）
+│   ├── forumApi.js                # VCP 论坛 API
+│   └── specialModelRouter.js      # 特殊模型白名单转发
+│
+├── AdminPanel/                    # 管理前端（独立仓库 VCPtoolbox-Junior-Panel 同步而来）
+│   ├── index.html
+│   ├── js/                        # 业务脚本（按模块拆分）
+│   ├── .panel-version             # 面板版本锚（由 panelUpdater 维护）
+│   └── ...
+│
+├── Agent/                         # Agent 数据目录（每个 Agent 一个子目录）
+│   └── <AgentName>/
+│       ├── <AgentName>.txt        # Agent 提示词文件
+│       ├── diary/                 # 该 Agent 的个人日记
+│       └── knowledge/             # 该 Agent 的专属知识库
+│
+├── knowledge/                     # 公共知识库（所有 Agent 共享，"公共*" 子目录会被梦系统扫描）
+├── thinking/                      # 思维簇目录（AI 元自学习产物）
+│
+├── TVStxt/                        # TVS 变量文本（{{Tar*}}/{{Var*}}/{{Sar*}} 占位符）
+├── rust-vexus-lite/               # Rust N-API 向量引擎子项目
+├── scripts/                       # 维护脚本（被 maintain.js 调度）
+├── build/                         # SEA 打包脚本
+├── docs/                          # 文档体系
+│
+├── data/                          # Docker 持久化目录（生产环境使用，docker-persist.json 定义）
+├── image/                         # 运行时媒体资源（表情包 / 图床）
+├── DebugLog/                      # 服务日志轮转
+└── .file_cache/                   # 跨节点文件拉取缓存
 ```
 
 ---
