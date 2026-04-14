@@ -230,11 +230,60 @@ class RotatingLogger {
   initialize() {
     ensureDebugLogDirSync();
     this.currentDate = this._getDateString();
+
+    // 启动即归档：若主日志文件已存在且非空，先归档再开新流
+    // 这样 ServerLog.txt 永远只包含当前这次启动的内容
+    try {
+      const mainFilePath = this._generateMainFilePath();
+      if (fsSync.existsSync(mainFilePath)) {
+        const stats = fsSync.statSync(mainFilePath);
+        if (stats.size > 0) {
+          this._archiveCurrentLogSync(stats);
+        }
+      }
+    } catch (err) {
+      originalConsoleError('[Logger] 启动归档失败（将继续 append 到原文件）:', err);
+    }
+
     this._openNewStream();
     // 启动时清理旧日志
     this._cleanOldLogs().catch(err => {
       originalConsoleError('[Logger] 启动清理失败:', err);
     });
+  }
+
+  // 同步版归档（仅启动时使用，确保新流打开前完成）
+  _archiveCurrentLogSync(stats) {
+    const mainFilePath = this._generateMainFilePath();
+
+    // 归档日期优先使用文件最后修改时间所在的那一天（更贴近日志真实归属）
+    let archiveDate = this.currentDate;
+    try {
+      const mtime = stats.mtime;
+      const fmt = new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        timeZone: this.timezone
+      });
+      archiveDate = fmt.format(mtime);
+    } catch {
+      // fallback to current date
+    }
+
+    this._ensureArchiveDir(archiveDate);
+
+    let archiveIndex = 1;
+    let archivePath = this._generateArchiveFilePath(archiveDate, archiveIndex);
+    while (fsSync.existsSync(archivePath)) {
+      archiveIndex++;
+      archivePath = this._generateArchiveFilePath(archiveDate, archiveIndex);
+    }
+
+    try {
+      fsSync.renameSync(mainFilePath, archivePath);
+      originalConsoleLog(`[Logger] 启动归档: ${path.basename(archivePath)} (${archiveDate}, ${stats.size} bytes)`);
+    } catch (err) {
+      originalConsoleError('[Logger] 启动归档 rename 失败:', err);
+    }
   }
 
   // 获取当前文件路径

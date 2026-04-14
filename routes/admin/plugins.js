@@ -573,12 +573,19 @@ module.exports = function(options) {
             // Priority 1: custom admin/index.html
             if (await _hasCustomAdminPage(pluginPath)) {
                 const content = await fs.readFile(path.join(pluginPath, 'admin', 'index.html'), 'utf-8');
+                // 禁用浏览器缓存：插件页迭代频繁，iframe 里必须拿到最新内容
+                res.set({
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                });
                 return res.type('html').send(content);
             }
 
             // Priority 2: auto-generate config form from configSchema
             if (_hasConfigSchema(manifest)) {
                 const genericPage = _buildGenericConfigPage(manifest.name, manifest.displayName || manifest.name);
+                res.set({ 'Cache-Control': 'no-cache' });
                 return res.type('html').send(genericPage);
             }
 
@@ -614,6 +621,12 @@ module.exports = function(options) {
             }
 
             await fs.access(assetPath);
+            // 禁用浏览器缓存：插件资源（尤其 panel.js）迭代频繁，native 模式下避免陈旧组件
+            res.set({
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+            });
             res.sendFile(resolvedPath);
         } catch (error) {
             if (error.code === 'ENOENT') {

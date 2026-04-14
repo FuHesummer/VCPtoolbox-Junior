@@ -165,7 +165,16 @@ class RAGDiaryPlugin {
         // --- 加载元思考链配置 ---
         await this.metaThinkingManager.loadConfig();
 
-        // --- 🌟 V2折叠：初始化 FoldingStore（热重载安全：先关旧实例再开新实例） ---
+        // 🔧 FoldingStore 初始化已移至 initialize() 方法末尾
+        // 原因：loadConfig 可能因 rag_tags.json 不存在而提前 return，导致 FoldingStore 永不初始化
+        //       现在独立于 loadConfig，确保每次插件初始化都会建 store
+    }
+
+    /**
+     * 🔧 独立的 FoldingStore 初始化方法
+     * 从 loadConfig 抽离，避免被 rag_tags.json 缺失的 early-return 跳过
+     */
+    _initializeFoldingStore() {
         try {
             // 防止热重载时产生幽灵实例：如果旧 store 存在，先优雅关闭
             if (this.foldingStore) {
@@ -305,6 +314,9 @@ class RAGDiaryPlugin {
         await this.loadConfig();
         await this.loadRagParams();
         this._startRagParamsWatcher();
+
+        // 🔧 FoldingStore 独立初始化（不受 loadConfig 的 early-return 影响）
+        this._initializeFoldingStore();
 
         // 启动缓存清理任务
         if (this.queryCacheEnabled) {
@@ -3784,61 +3796,70 @@ class RAGDiaryPlugin {
             // 🌟 V2折叠：FoldingStore 接口
             // ═══════════════════════════════════════════════════
 
-            /** FoldingStore 读写接口，供 ContextFoldingV2 使用 */
-            foldingStore: self.foldingStore ? Object.freeze({
-                /**
-                 * 获取条目
-                 * @param {string} contentHash - SHA-256 哈希
-                 * @returns {object|null} 条目数据
-                 */
-                getEntry(contentHash) {
-                    return self.foldingStore.getEntry(contentHash);
-                },
+            /**
+             * FoldingStore 读写接口，供 ContextFoldingV2 使用
+             * 🔧 使用 getter：随 self.foldingStore 动态变化，避免快照时点未就绪
+             * （解决"依赖方先初始化导致拿到 null"的时序 bug，同时热重载友好）
+             */
+            get foldingStore() {
+                if (!self.foldingStore) return null;
+                // 每次访问时基于当前 self.foldingStore 构造只读代理
+                // ContextFoldingV2 不做身份比较，所以每次新建是安全的
+                return Object.freeze({
+                    /**
+                     * 获取条目
+                     * @param {string} contentHash - SHA-256 哈希
+                     * @returns {object|null} 条目数据
+                     */
+                    getEntry(contentHash) {
+                        return self.foldingStore.getEntry(contentHash);
+                    },
 
-                /**
-                 * 写入/更新向量
-                 * @param {string} contentHash
-                 * @param {object} data - { textPreview, vector }
-                 */
-                upsertVector(contentHash, data) {
-                    self.foldingStore.upsertVector(contentHash, data);
-                },
+                    /**
+                     * 写入/更新向量
+                     * @param {string} contentHash
+                     * @param {object} data - { textPreview, vector }
+                     */
+                    upsertVector(contentHash, data) {
+                        self.foldingStore.upsertVector(contentHash, data);
+                    },
 
-                /**
-                 * 写入摘要结果
-                 * @param {string} contentHash
-                 * @param {string} summary
-                 * @param {string} status - 'ready' | 'failed'
-                 */
-                upsertSummary(contentHash, summary, status) {
-                    self.foldingStore.upsertSummary(contentHash, summary, status);
-                },
+                    /**
+                     * 写入摘要结果
+                     * @param {string} contentHash
+                     * @param {string} summary
+                     * @param {string} status - 'ready' | 'failed'
+                     */
+                    upsertSummary(contentHash, summary, status) {
+                        self.foldingStore.upsertSummary(contentHash, summary, status);
+                    },
 
-                /**
-                 * 标记为摘要生成中
-                 * @param {string} contentHash
-                 */
-                markPending(contentHash) {
-                    self.foldingStore.markPending(contentHash);
-                },
+                    /**
+                     * 标记为摘要生成中
+                     * @param {string} contentHash
+                     */
+                    markPending(contentHash) {
+                        self.foldingStore.markPending(contentHash);
+                    },
 
-                /**
-                 * 获取统计信息
-                 * @returns {{ count, maxEntries, available }}
-                 */
-                getStats() {
-                    return self.foldingStore.getStats();
-                },
+                    /**
+                     * 获取统计信息
+                     * @returns {{ count, maxEntries, available }}
+                     */
+                    getStats() {
+                        return self.foldingStore.getStats();
+                    },
 
-                /**
-                 * 生成内容哈希的静态工具方法
-                 * @param {string} sanitizedContent
-                 * @returns {string}
-                 */
-                hashContent(sanitizedContent) {
-                    return FoldingStore.hashContent(sanitizedContent);
-                }
-            }) : null
+                    /**
+                     * 生成内容哈希的静态工具方法
+                     * @param {string} sanitizedContent
+                     * @returns {string}
+                     */
+                    hashContent(sanitizedContent) {
+                        return FoldingStore.hashContent(sanitizedContent);
+                    }
+                });
+            }
         });
     }
 

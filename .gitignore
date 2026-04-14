@@ -180,6 +180,10 @@ Plugin/ProjectAnalyst/database/
 Plugin/RAGDiaryPlugin/vector_cache.json
 Plugin/RAGDiaryPlugin/meta_chain_vector_cache.json
 Plugin/RAGDiaryPlugin/rag_tags.json
+# FoldingStore SQLite (ContextFoldingV2 运行时数据库)
+Plugin/RAGDiaryPlugin/folding_store.db
+Plugin/RAGDiaryPlugin/folding_store.db-shm
+Plugin/RAGDiaryPlugin/folding_store.db-wal
 # semantic_groups.json tracked with default empty content; .edit.json is runtime only
 Plugin/RAGDiaryPlugin/semantic_groups.edit.json
 Plugin/RAGDiaryPlugin/semantic_vectors/
@@ -219,6 +223,9 @@ Plugin/XiaohongshuFetch/config.env
 Plugin/.store-cache.json
 Plugin/.tree-cache.json
 Plugin/*/code.bin
+
+# AdminPanel 用户布局（个性化数据，不随仓库分发）
+/dashboard-layout.json
 
 # 插件 npm install 产物（插件仓库协议不要求 commit lock）
 Plugin/*/package-lock.json

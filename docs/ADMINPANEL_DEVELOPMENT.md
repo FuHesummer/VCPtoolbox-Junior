@@ -148,6 +148,117 @@ flowchart LR
 
 ---
 
+## 5.5 插件 admin 扩展协议（Junior 新增，v2.0+）
+
+Junior 版本引入了**插件自带 admin 前后端**的通信协议，让插件可以**独立提供管理页面**，完全解耦主面板和插件（商店安装即用）。支持两种挂载模式：
+
+### 协议一览
+
+| 能力 | 机制 | 用户体验 |
+|------|------|---------|
+| 插件 API | `/admin_api/plugins/:name/api/*` → 分发到插件的 `module.exports.pluginAdminRouter`（Express.Router） | 插件自己定义 RESTful 接口 |
+| 插件页面（iframe 模式） | `/admin_api/plugins/:name/admin-page` → 返回插件的 `admin/index.html` | 插件完全独立的 HTML 页面，主面板 iframe 嵌入 |
+| 插件页面（native 模式 ⭐） | `/admin_api/plugins/:name/admin-assets/<entry>` → 插件 JS 注册 Vue 组件到主面板 | **无 iframe 嵌套**，与主面板原生页面完全等价 |
+| 侧边栏导航 | manifest `adminNav` 字段 → `SideBar.vue` 自动注入 | 插件启用即在导航出现入口 |
+
+### 5.5.1 `pluginAdminRouter`（插件后端 API）
+
+**插件侧**（`<plugin>/index.js`）：
+
+```js
+const express = require('express');
+
+const pluginAdminRouter = express.Router();
+pluginAdminRouter.use(express.json({ limit: '2mb' }));
+
+pluginAdminRouter.get('/items', async (req, res) => { ... });
+pluginAdminRouter.post('/items/:id/approve', async (req, res) => { ... });
+
+module.exports = {
+    initialize,
+    shutdown,
+    pluginAdminRouter,  // ← 暴露给主项目挂载
+};
+```
+
+**主项目侧**：`Plugin.js` 的 `getPluginAdminRouter(name)` 从 `serviceModules` 拿到路由，`routes/adminPanelRoutes.js` 通用动态路由 `/plugins/:pluginName/api/*` 分发。
+
+`adminServer` 独立进程通过兜底代理转发到主服务，无需额外挂载。
+
+### 5.5.2 `adminNav` 声明（manifest）
+
+```json
+{
+  "adminNav": {
+    "title": "梦境审批",
+    "icon": "bedtime",
+    "type": "native",        // 或 'iframe'（默认）
+    "entry": "panel.js"      // native 模式下相对 admin/ 的 JS 入口
+  }
+}
+```
+
+声明后 `SideBar.vue` 自动读取并注入到「插件」分组（用户可在 PluginManager 勾选隐藏）。
+
+### 5.5.3 Native 模式（推荐）
+
+**原理**：
+1. 主面板 Vite 构建用 `vue/dist/vue.esm-bundler.js`（含模板编译器），这样可以运行时编译 template 字符串。
+2. [AdminPanel-Vue/src/plugin-host.ts](../AdminPanel-Vue/src/plugin-host.ts) 暴露 `window.__VCPPanel`。
+3. 插件的 `admin/panel.js` 通过 `window.__VCPPanel.register(name, component)` 注册组件。
+4. [PluginNavView.vue](../AdminPanel-Vue/src/views/plugins/PluginNavView.vue) 检测 `adminNav.type === 'native'`，动态 `<script>` 加载 entry，拿到注册组件用 `<component :is>` 原生挂载。
+
+**window.__VCPPanel API**：
+
+| 属性 / 方法 | 作用 |
+|------------|------|
+| `Vue` | 主面板 Vue 3 实例（含 `ref`/`computed`/`onMounted` 等） |
+| `pluginApi(name)` | 返回 `{ get, post, patch, delete }`，自动拼 `/admin_api/plugins/<name>/api` 前缀 |
+| `apiFetch(path, opts)` | 主面板通用 apiFetch（带鉴权 cookie） |
+| `showToast(msg, kind)` | 主面板 toast（success/error/warn/info） |
+| `formatTime(input)` / `formatBytes(n)` / `formatCompact(n)` | 格式化工具 |
+| `markdown(text)` | 主面板 markdown 渲染器（与 Forum / Bubble 一致） |
+| `register(name, component)` | 注册插件组件（主面板动态挂载时读取） |
+
+**插件 `admin/panel.js` 最小示例**：
+
+```js
+(function () {
+  const P = window.__VCPPanel;
+  const { ref, onMounted } = P.Vue;
+  const api = P.pluginApi('YourPluginName');
+
+  P.register('YourPluginName', {
+    template: `
+      <div class="page">
+        <PageHeader title="..." icon="..."/>
+        <div class="card">
+          <h3>Hello</h3>
+          <p>{{ items.length }} 项数据</p>
+        </div>
+      </div>
+    `,
+    setup() {
+      const items = ref([]);
+      onMounted(async () => { items.value = await api.get('/items'); });
+      return { items };
+    },
+  });
+})();
+```
+
+**全局可用组件**：`PageHeader` / `EmptyState` / `BaseModal` 已在 [main.ts](../AdminPanel-Vue/src/main.ts) 注册为 app 全局组件，插件 template 可直接使用。
+
+**样式策略**：插件组件直接在主面板 DOM 里渲染，可直接使用 `.card` / `.btn` / `.chip` / CSS 变量（`--button-bg` 等），不需重复造样式。若需专属样式，可在 panel.js 顶层注入 `<style>` 标签。
+
+### 5.5.4 Iframe 模式（兼容老插件）
+
+仅需提供 `admin/index.html`，主面板 iframe 加载。页面与主面板完全隔离，可用任何技术栈。适合遗留插件或需要沙盒隔离的场景。
+
+`<iframe>` 的 src 走 `/admin_api/plugins/:name/admin-page`（返回 `res.sendFile(admin/index.html)`，带 no-cache 响应头方便迭代）。
+
+---
+
 ## 6. 本地调试与排错
 
 - **运行**：`node server.js`，浏览器访问 `http://localhost:5890/AdminPanel`（端口以 config 为准）。鉴权通过后即可调试。

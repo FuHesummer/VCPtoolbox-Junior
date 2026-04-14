@@ -21,3 +21,69 @@ export function getServerLog(offset = 0, incremental = false, opts: { showLoader
     { ...SILENT, ...opts },
   )
 }
+
+export function clearServerLog() {
+  return apiFetch<{ success: boolean; message: string }>(
+    '/admin_api/server-log/clear',
+    { method: 'POST' },
+  )
+}
+
+// ---------- 归档日志 ----------
+export interface ArchiveSession {
+  index: number
+  size: number
+  mtime: number
+  firstLine?: string
+}
+
+export interface ArchiveDay {
+  date: string
+  sessions: ArchiveSession[]
+}
+
+export function getServerLogArchives() {
+  return apiFetch<{ archives: ArchiveDay[] }>(
+    '/admin_api/server-log/archives',
+    { ...SILENT },
+  )
+}
+
+export function getServerLogArchiveContent(date: string, index: number) {
+  return apiFetch<{
+    content: string
+    fileSize: number
+    truncated: boolean
+    readFrom: number
+    hasError: boolean
+    path: string
+    date: string
+    index: number
+  }>(
+    `/admin_api/server-log/archives/${encodeURIComponent(date)}/${index}`,
+    { ...SILENT },
+  )
+}
+
+export function deleteServerLogArchive(date: string, index: number) {
+  return apiFetch<{ success: boolean }>(
+    `/admin_api/server-log/archives/${encodeURIComponent(date)}/${index}`,
+    { method: 'DELETE' },
+  )
+}
+
+// ---------- 重启脚本日志 ----------
+export interface RestartLogFile {
+  exists: boolean
+  content: string
+  size: number
+  truncated: boolean
+  mtime: number
+}
+
+export function getRestartLogs() {
+  return apiFetch<{ server: RestartLogFile; admin: RestartLogFile }>(
+    '/admin_api/server-log/restart-logs',
+    { ...SILENT },
+  )
+}

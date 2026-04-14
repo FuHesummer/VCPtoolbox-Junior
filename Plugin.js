@@ -582,6 +582,16 @@ class PluginManager extends EventEmitter {
                 }
             });
 
+            // 🔧 依赖时序修复：ContextBridge 提供者（RAGDiaryPlugin）必须优先初始化
+            // 否则依赖它的插件（如 ContextFoldingV2）拿到的 bridge 里 foldingStore 会是 null
+            // 初始化顺序不影响 preprocessor 执行顺序（后者由 this.preprocessorOrder 决定）
+            const bridgeProviderIdx = initializationOrder.indexOf('RAGDiaryPlugin');
+            if (bridgeProviderIdx > 0) {
+                initializationOrder.splice(bridgeProviderIdx, 1);
+                initializationOrder.unshift('RAGDiaryPlugin');
+                if (this.debugMode) console.log('[PluginManager] 🔧 RAGDiaryPlugin 已提前到初始化队首（ContextBridge 依赖保证）');
+            }
+
             for (const pluginName of initializationOrder) {
                 const item = allModulesMap.get(pluginName);
                 if (!item || typeof item.module.initialize !== 'function') continue;
@@ -699,6 +709,29 @@ class PluginManager extends EventEmitter {
 
     getServiceModule(name) {
         return this.serviceModules.get(name)?.module;
+    }
+
+    /**
+     * 🔌 插件 admin API 协议 — 拿到插件自己暴露的 Express Router
+     *
+     * 插件通过 `module.exports.pluginAdminRouter = router` 暴露自己的 admin 路由。
+     * 主项目路由层会通过 `/admin_api/plugins/:name/api/*` 把请求分发到这个 router。
+     *
+     * 这是"插件前后端通信协议"的后端挂载点，实现插件 admin UI 与主面板的完美解耦。
+     *
+     * @param {string} name 插件名
+     * @returns {express.Router|null}
+     */
+    getPluginAdminRouter(name) {
+        // hybridservice / service 类：插件模块存在 serviceModules
+        const serviceItem = this.serviceModules.get(name);
+        if (serviceItem?.module?.pluginAdminRouter) {
+            return serviceItem.module.pluginAdminRouter;
+        }
+        // 纯 messagePreprocessor 类：存在 messagePreprocessors
+        const pre = this.messagePreprocessors.get(name);
+        if (pre?.pluginAdminRouter) return pre.pluginAdminRouter;
+        return null;
     }
 
     // 新增：获取 VCPLog 插件的推送函数，供其他插件依赖注入

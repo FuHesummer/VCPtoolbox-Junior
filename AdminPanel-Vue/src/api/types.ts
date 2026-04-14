@@ -34,6 +34,13 @@ export interface AdminNavDef {
   icon?: string
   src?: string
   inline?: string
+  // 🔌 挂载模式
+  // - 'iframe'（默认）：主面板用 iframe 加载插件 admin/index.html
+  // - 'native'：动态加载 entry JS，插件通过 window.__VCPPanel.register 提供 Vue 组件，
+  //             主面板原生挂载（视觉/响应式/路由与主面板页面完全一致）
+  type?: 'iframe' | 'native'
+  // native 模式下的组件入口 JS（相对于插件根目录，如 'admin/panel.js'）
+  entry?: string
 }
 
 export interface PluginInfo {

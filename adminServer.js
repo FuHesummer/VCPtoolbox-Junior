@@ -247,16 +247,17 @@ const localOptions = {
 // Static requires — esbuild needs string literals to bundle these modules.
 // DO NOT convert back to dynamic require(path.join(...)) — breaks SEA/bundling.
 const localAdminModules = {
-    system:     require('./routes/admin/system'),
-    logs:       require('./routes/admin/logs'),
-    server:     require('./routes/admin/server'),
-    config:     require('./routes/admin/config'),
-    rag:        require('./routes/admin/rag'),
-    toolbox:    require('./routes/admin/toolbox'),
-    agents:     require('./routes/admin/agents'),
-    tvs:        require('./routes/admin/tvs'),
-    schedules:  require('./routes/admin/schedules'),
-    dailyNotes: require('./routes/admin/dailyNotes'),
+    system:            require('./routes/admin/system'),
+    logs:              require('./routes/admin/logs'),
+    server:            require('./routes/admin/server'),
+    config:            require('./routes/admin/config'),
+    rag:               require('./routes/admin/rag'),
+    toolbox:           require('./routes/admin/toolbox'),
+    agents:            require('./routes/admin/agents'),
+    tvs:               require('./routes/admin/tvs'),
+    schedules:         require('./routes/admin/schedules'),
+    dailyNotes:        require('./routes/admin/dailyNotes'),
+    dashboardLayout:   require('./routes/admin/dashboardLayout'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {
