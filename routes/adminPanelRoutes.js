@@ -49,6 +49,7 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
         toolListEditor: require('./admin/toolListEditor'),
         pluginStore:    require('./admin/pluginStore'),
         dailyNotes:     require('./admin/dailyNotes'),
+        newapiMonitor:  require('./admin/newapiMonitor'),
     };
 
     for (const [moduleName, moduleFactory] of Object.entries(adminModules)) {
