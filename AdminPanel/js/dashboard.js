@@ -1,6 +1,7 @@
 // AdminPanel/js/dashboard.js
 import { apiFetch } from './utils.js';
 import { initializeCalendarWidget } from './schedule-manager.js';
+import { getPluginUiPrefs } from './plugins.js';
 
 const MONITOR_API_BASE_URL = '/admin_api/system-monitor';
 const API_BASE_URL = '/admin_api';
@@ -11,6 +12,7 @@ let lastLogCheckTime = null;
 
 let logoClickCount = 0;
 let logoClickTimer = null;
+let pluginCardsLoaded = false;
 
 /**
  * 初始化仪表盘，设置定时器并加载初始数据。
@@ -22,7 +24,8 @@ export function initializeDashboard() {
     }
     updateDashboardData();
     initializeCalendarWidget();
-    
+    loadPluginDashboardCards();
+
     updateActivityChart().then(() => {
         drawActivityChart();
     });
@@ -94,6 +97,12 @@ export function stopDashboardUpdates() {
         clearInterval(monitorIntervalId);
         monitorIntervalId = null;
         console.log('Dashboard monitoring stopped.');
+    }
+    // Reset plugin cards so they reload fresh on next dashboard visit
+    pluginCardsLoaded = false;
+    const grid = document.querySelector('#dashboard-section .dashboard-grid');
+    if (grid) {
+        grid.querySelectorAll('.plugin-dashboard-card').forEach(el => el.remove());
     }
 }
 
@@ -177,6 +186,9 @@ async function updateDashboardData() {
                 <div class="node-info-item"><strong>运行时间:</strong> ${uptimeHours}h ${uptimeMinutes}m</div>
             `;
         }
+
+        // NewAPI summary card on dashboard
+        updateNewApiDashCard();
 
     } catch (error) {
         console.error('Failed to update dashboard data:', error);
@@ -469,3 +481,175 @@ function drawActivityChart() {
         ctx.fill();
     }
 }
+
+// ══════════════════════════════════════════════════
+//  NewAPI Dashboard Summary Card
+// ══════════════════════════════════════════════════
+
+function _fmtCompact(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(n);
+}
+
+async function updateNewApiDashCard() {
+    const card = document.getElementById('newapi-dash-card');
+    const content = document.getElementById('newapi-dash-content');
+    if (!card || !content) return;
+
+    try {
+        // Use raw fetch to avoid apiFetch's global error toast on failure
+        const resp = await fetch(`${API_BASE_URL}/newapi-monitor/summary`, { credentials: 'same-origin' });
+        if (!resp.ok) throw new Error(resp.statusText);
+        const res = await resp.json();
+        if (!res.success) throw new Error(res.error || 'failed');
+
+        const d = res.data;
+        card.style.display = '';
+        content.innerHTML = `
+            <div class="newapi-dash-grid">
+                <div class="newapi-dash-item">
+                    <span class="newapi-dash-label">请求数</span>
+                    <strong class="newapi-dash-value">${_fmtCompact(d.total_requests)}</strong>
+                </div>
+                <div class="newapi-dash-item">
+                    <span class="newapi-dash-label">Tokens</span>
+                    <strong class="newapi-dash-value">${_fmtCompact(d.total_tokens)}</strong>
+                </div>
+                <div class="newapi-dash-item">
+                    <span class="newapi-dash-label">Quota</span>
+                    <strong class="newapi-dash-value">${_fmtCompact(d.total_quota)}</strong>
+                </div>
+                <div class="newapi-dash-item">
+                    <span class="newapi-dash-label">RPM / TPM</span>
+                    <strong class="newapi-dash-value">${_fmtCompact(d.current_rpm)} / ${_fmtCompact(d.current_tpm)}</strong>
+                </div>
+            </div>`;
+    } catch {
+        // NewAPI not configured or unreachable — show hint instead of hiding
+        card.style.display = '';
+        content.innerHTML = `<p style="font-size:0.85em;color:var(--secondary-text);margin:0;">未配置，请在全局配置中填写<br>NEWAPI_MONITOR 相关参数</p>`;
+    }
+}
+
+// ══════════════════════════════════════════════════
+//  Plugin Dashboard Cards Injection
+// ══════════════════════════════════════════════════
+
+/**
+ * Load and inject plugin dashboard cards.
+ * Reads plugin manifests for `dashboardCards` field and fetches each card's HTML
+ * from the plugin's admin-assets endpoint.
+ *
+ * Manifest schema:
+ *   "dashboardCards": [
+ *     {
+ *       "id":     "unique-card-id",
+ *       "title":  "Card Title",
+ *       "icon":   "material_icon_name",   (optional)
+ *       "source": "dashboard-card.html",  (relative to plugin admin/ dir)
+ *       "width":  "2x"                    (optional, "1x" default, "2x" spans two columns)
+ *     }
+ *   ]
+ */
+async function loadPluginDashboardCards() {
+    // Only inject once per dashboard session (avoid duplicates on 5s refresh)
+    if (pluginCardsLoaded) return;
+
+    const grid = document.querySelector('#dashboard-section .dashboard-grid');
+    if (!grid) return;
+
+    try {
+        const plugins = await apiFetch(`${API_BASE_URL}/plugins`, {}, false);
+        if (!Array.isArray(plugins)) return;
+
+        const cardsToLoad = [];
+        const uiPrefs = getPluginUiPrefs();
+        for (const plugin of plugins) {
+            const manifest = plugin.manifest;
+            if (!manifest || !Array.isArray(manifest.dashboardCards)) continue;
+            if (!plugin.enabled) continue; // skip disabled plugins
+            // Check UI prefs — default to enabled if not set
+            const prefs = uiPrefs[manifest.name];
+            if (prefs && prefs.dashboardCards === false) continue;
+
+            for (const cardDef of manifest.dashboardCards) {
+                if (!cardDef.source || !cardDef.id) continue;
+                cardsToLoad.push({
+                    pluginName: manifest.name,
+                    displayName: manifest.displayName || manifest.name,
+                    ...cardDef,
+                });
+            }
+        }
+
+        if (cardsToLoad.length === 0) return;
+
+        // Fetch all card HTML fragments in parallel
+        const results = await Promise.allSettled(
+            cardsToLoad.map(async (card) => {
+                const resp = await fetch(`${API_BASE_URL}/plugins/${encodeURIComponent(card.pluginName)}/admin-assets/${encodeURIComponent(card.source)}`, { credentials: 'same-origin' });
+                if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+                const html = await resp.text();
+                return { card, html };
+            })
+        );
+
+        for (const result of results) {
+            if (result.status !== 'fulfilled') continue;
+            const { card, html } = result.value;
+
+            // Prevent duplicate injection
+            if (grid.querySelector(`[data-plugin-card-id="${card.id}"]`)) continue;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'status-card plugin-dashboard-card';
+            wrapper.dataset.pluginCardId = card.id;
+            wrapper.dataset.pluginName = card.pluginName;
+            if (card.width === '2x') {
+                wrapper.classList.add('plugin-card-wide');
+            }
+
+            // Card header
+            const header = document.createElement('h3');
+            if (card.icon) {
+                header.innerHTML = `<span class="material-symbols-outlined" style="font-size:1.1em;vertical-align:-2px;margin-right:6px;">${card.icon}</span>${card.title || card.id}`;
+            } else {
+                header.textContent = card.title || card.id;
+            }
+            wrapper.appendChild(header);
+
+            // Card body (injected HTML)
+            const body = document.createElement('div');
+            body.className = 'status-card-content plugin-card-body';
+            body.innerHTML = html;
+            wrapper.appendChild(body);
+
+            // Execute any <script> tags in the injected HTML
+            const scripts = body.querySelectorAll('script');
+            for (const oldScript of scripts) {
+                const newScript = document.createElement('script');
+                if (oldScript.src) {
+                    newScript.src = oldScript.src;
+                } else {
+                    newScript.textContent = oldScript.textContent;
+                }
+                oldScript.replaceWith(newScript);
+            }
+
+            // Plugin attribution badge
+            const badge = document.createElement('div');
+            badge.className = 'plugin-card-badge';
+            badge.textContent = card.displayName;
+            wrapper.appendChild(badge);
+
+            grid.appendChild(wrapper);
+        }
+
+        pluginCardsLoaded = true;
+    } catch (error) {
+        console.warn('[Dashboard] Failed to load plugin dashboard cards:', error);
+    }
+}
+

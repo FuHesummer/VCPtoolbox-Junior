@@ -421,6 +421,8 @@
                                 class="material-symbols-outlined">dashboard</span>仪表盘</a></li>
                     <li><a href="#" data-target="server-log-viewer"><span
                                 class="material-symbols-outlined">terminal</span>服务器日志</a></li>
+                    <li><a href="#" data-target="newapi-monitor"><span
+                                class="material-symbols-outlined">monitoring</span>NewAPI 监控</a></li>
 
                     <li class="nav-category">配置</li>
                     <li><a href="#" data-target="base-config"><span
@@ -435,8 +437,12 @@
                                 class="material-symbols-outlined">inventory_2</span>Toolbox 管理</a></li>
 
                     <li class="nav-category">记忆系统</li>
-                    <li><a href="#" data-target="daily-notes-manager"><span
-                                class="material-symbols-outlined">description</span>知识库管理</a></li>
+                    <li><a href="#" data-target="diary-manager"><span
+                                class="material-symbols-outlined">auto_stories</span>日记管理</a></li>
+                    <li><a href="#" data-target="knowledge-manager"><span
+                                class="material-symbols-outlined">school</span>知识库管理</a></li>
+                    <li><a href="#" data-target="public-knowledge-manager"><span
+                                class="material-symbols-outlined">menu_book</span>公共知识库</a></li>
                     <li><a href="#" data-target="semantic-groups-editor"><span
                                 class="material-symbols-outlined">hub</span>语义组编辑</a></li>
                     <li><a href="#" data-target="thinking-chains-editor"><span
@@ -534,10 +540,31 @@
                             <!-- 日历挂件将动态加载到这里 -->
                         </div>
                     </div>
+                    <div class="status-card newapi-dash-card" id="newapi-dash-card">
+                        <h3>NewAPI 用量</h3>
+                        <div class="status-card-content" id="newapi-dash-content">
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                    <!-- 插件注入的仪表盘卡片将动态添加到这里 -->
                 </div>
                 <div class="activity-chart-container content-card">
                     <h3><span class="material-symbols-outlined">monitoring</span>服务器活跃度</h3>
                     <canvas id="activity-chart-canvas"></canvas>
+                </div>
+            </section>
+
+            <!-- Section: NewAPI Monitor -->
+            <section id="newapi-monitor-section" class="config-section">
+                <div class="page-header">
+                    <span class="material-symbols-outlined page-icon">monitoring</span>
+                    <div>
+                        <h2>NewAPI 监控</h2>
+                        <p class="page-desc">最近 24 小时用量总览</p>
+                    </div>
+                </div>
+                <div id="newapi-monitor-root">
+                    <p class="loading-text" style="text-align:center;padding:40px;">加载中...</p>
                 </div>
             </section>
 

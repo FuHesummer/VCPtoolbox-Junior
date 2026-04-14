@@ -573,22 +573,26 @@ module.exports = function(options) {
     });
 
     // Serve static assets from plugin's admin directory
-    router.get('/plugins/:pluginName/admin-assets/:filename', async (req, res) => {
-        const { pluginName, filename } = req.params;
+    // Serve static assets from plugin's admin directory (supports sub-paths via wildcard)
+    router.get('/plugins/:pluginName/admin-assets/*subpath', async (req, res) => {
+        const { pluginName } = req.params;
+        // Express 5 wildcard returns array; join segments back into a path string
+        const rawSubpath = req.params.subpath;
+        const assetSubPath = Array.isArray(rawSubpath) ? rawSubpath.join('/') : rawSubpath;
 
         // Security: prevent path traversal
-        if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-            return res.status(400).json({ error: 'Invalid filename.' });
+        if (!assetSubPath || assetSubPath.includes('..')) {
+            return res.status(400).json({ error: 'Invalid asset path.' });
         }
 
         try {
             const found = await _findPlugin(pluginName);
             if (!found) return res.status(404).json({ error: `Plugin '${pluginName}' not found.` });
 
-            const assetPath = path.join(found.pluginPath, 'admin', filename);
+            const assetPath = path.join(found.pluginPath, 'admin', assetSubPath);
             const resolvedPath = path.resolve(assetPath);
             const adminDir = path.resolve(path.join(found.pluginPath, 'admin'));
-            if (!resolvedPath.startsWith(adminDir)) {
+            if (!resolvedPath.startsWith(adminDir + path.sep) && resolvedPath !== adminDir) {
                 return res.status(403).json({ error: 'Access denied.' });
             }
 
@@ -780,6 +784,41 @@ module.exports = function(options) {
 </body>
 </html>`;
     }
+
+    // ══════════════════════════════════════════════════
+    //  Plugin UI Preferences (dashboard cards / nav page toggles)
+    //  Stored in plugin-ui-prefs.json at VCP_ROOT
+    // ══════════════════════════════════════════════════
+    const UI_PREFS_PATH = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'plugin-ui-prefs.json');
+
+    async function _readUiPrefs() {
+        try {
+            return JSON.parse(await fs.readFile(UI_PREFS_PATH, 'utf-8'));
+        } catch {
+            return {};
+        }
+    }
+
+    router.get('/plugin-ui-prefs', async (req, res) => {
+        try {
+            res.json(await _readUiPrefs());
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to read plugin UI prefs', details: error.message });
+        }
+    });
+
+    router.post('/plugin-ui-prefs', async (req, res) => {
+        try {
+            const prefs = req.body;
+            if (!prefs || typeof prefs !== 'object') {
+                return res.status(400).json({ error: 'Invalid prefs payload' });
+            }
+            await fs.writeFile(UI_PREFS_PATH, JSON.stringify(prefs, null, 2), 'utf-8');
+            res.json({ message: 'Plugin UI prefs saved' });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to save plugin UI prefs', details: error.message });
+        }
+    });
 
     return router;
 };

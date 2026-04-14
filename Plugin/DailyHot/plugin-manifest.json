@@ -15,6 +15,18 @@
     "timeout": 120000
   },
   "refreshIntervalCron": "0 */4 * * *",
+  "adminNav": {
+    "title": "每日热榜",
+    "icon": "trending_up"
+  },
+  "dashboardCards": [
+    {
+      "id": "dailyhot-summary",
+      "title": "今日热榜",
+      "icon": "trending_up",
+      "source": "dashboard-card.html"
+    }
+  ],
   "capabilities": {
     "systemPromptPlaceholders": [
       {

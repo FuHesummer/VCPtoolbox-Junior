@@ -5,30 +5,189 @@ import { parseEnvToList, buildEnvStringForPlugin, createFormGroup, createComment
 
 const API_BASE_URL = '/admin_api';
 let originalPluginConfigs = {};
+let pluginUiPrefs = {}; // { pluginName: { dashboardCards: bool, adminNav: bool } }
+let pluginUpdates = {}; // { pluginName: { currentVersion, latestVersion } }
+let pluginUpdatesCacheTime = 0;
+const UPDATE_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+/** Get current plugin UI prefs (loaded on init). */
+export function getPluginUiPrefs() { return pluginUiPrefs; }
 
 /**
- * Load plugin list — no longer injects into sidebar.
- * Only creates hidden config sections for each plugin.
+ * Load plugin list — creates config sections and injects sidebar nav for plugins with adminNav.
  */
 export async function loadPluginList() {
     const configDetailsContainer = document.getElementById('config-details-container');
     if (!configDetailsContainer) return;
 
     try {
-        const plugins = await apiFetch(`${API_BASE_URL}/plugins`);
+        const [plugins, prefs] = await Promise.all([
+            apiFetch(`${API_BASE_URL}/plugins`),
+            apiFetch(`${API_BASE_URL}/plugin-ui-prefs`, {}, false).catch(() => ({})),
+        ]);
+        pluginUiPrefs = prefs || {};
 
-        // Clear existing dynamic sections
+        // Clear existing dynamic sections and nav items
         configDetailsContainer.querySelectorAll('section.dynamic-plugin-section').forEach(sec => sec.remove());
+        document.querySelectorAll('.plugin-nav-item').forEach(el => el.remove());
 
         plugins.forEach(plugin => {
             createPluginConfigSection(plugin, configDetailsContainer);
         });
+
+        // Inject sidebar nav items for plugins declaring adminNav
+        injectPluginNavItems(plugins, configDetailsContainer);
 
         // Store for plugin manager page
         window._pluginListCache = plugins;
     } catch (error) {
         console.error('Failed to load plugin list:', error);
     }
+}
+
+/**
+ * For plugins with manifest.adminNav, inject sidebar nav items and page sections.
+ * adminNav schema: { title: string, icon: string }
+ */
+function injectPluginNavItems(plugins, container) {
+    // Find the "插件" category anchor in sidebar — insert nav items after "插件管理"
+    const pluginManagerLink = document.querySelector('a[data-target="plugin-manager"]');
+    const insertAfter = pluginManagerLink?.closest('li');
+    if (!insertAfter) return;
+
+    for (const plugin of plugins) {
+        const nav = plugin.manifest?.adminNav;
+        if (!nav || !plugin.enabled) continue;
+        if (!plugin.hasAdminPage) continue;
+
+        const pluginName = plugin.manifest.name;
+
+        // Check UI prefs — default to enabled if not set
+        const prefs = pluginUiPrefs[pluginName];
+        if (prefs && prefs.adminNav === false) continue;
+        const navId = `plugin-nav-${pluginName}`;
+        const sectionId = `plugin-nav-${pluginName}-section`;
+
+        // Skip if already injected (shouldn't happen after cleanup, but be safe)
+        if (document.getElementById(navId)) continue;
+
+        // Create sidebar nav item
+        const li = document.createElement('li');
+        li.id = navId;
+        li.className = 'plugin-nav-item';
+        const a = document.createElement('a');
+        a.href = '#';
+        a.dataset.target = `plugin-nav-${pluginName}`;
+        a.innerHTML = `<span class="material-symbols-outlined">${nav.icon || 'extension'}</span>${nav.title || plugin.manifest.displayName || pluginName}`;
+        li.appendChild(a);
+        insertAfter.parentNode.insertBefore(li, insertAfter.nextSibling);
+
+        // Create hidden section
+        const section = document.createElement('section');
+        section.id = sectionId;
+        section.classList.add('config-section', 'dynamic-plugin-section', 'plugin-nav-section');
+        section.dataset.pluginName = pluginName;
+        section.innerHTML = `
+            <div class="page-header">
+                <span class="material-symbols-outlined page-icon">${nav.icon || 'extension'}</span>
+                <div>
+                    <h2>${nav.title || plugin.manifest.displayName || pluginName}</h2>
+                    <p class="page-desc">${plugin.manifest.description || ''}</p>
+                </div>
+            </div>
+            <div class="plugin-page-content" data-plugin="${pluginName}">
+                <p class="loading-text">加载中...</p>
+            </div>
+        `;
+        container.appendChild(section);
+    }
+}
+
+/**
+ * Load plugin admin page content into the nav section (called by navigateTo).
+ * Fetches HTML from /admin_api/plugins/{name}/admin-page, extracts body, injects inline.
+ */
+export async function loadPluginNavPage(pluginName) {
+    const section = document.getElementById(`plugin-nav-${pluginName}-section`);
+    if (!section) return;
+
+    const contentDiv = section.querySelector('.plugin-page-content');
+    if (!contentDiv) return;
+
+    // Skip if already loaded
+    if (contentDiv.dataset.loaded === 'true') return;
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/plugins/${encodeURIComponent(pluginName)}/admin-page`, { credentials: 'same-origin' });
+        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+        let html = await resp.text();
+
+        // Extract body content from full HTML document
+        html = extractPageBody(html);
+
+        contentDiv.innerHTML = html;
+        contentDiv.dataset.loaded = 'true';
+
+        // Execute <script> tags
+        const scripts = contentDiv.querySelectorAll('script');
+        for (const oldScript of scripts) {
+            const newScript = document.createElement('script');
+            if (oldScript.src) {
+                // Rewrite relative src to admin-assets endpoint
+                if (!oldScript.src.startsWith('http') && !oldScript.src.startsWith('/')) {
+                    newScript.src = `${API_BASE_URL}/plugins/${encodeURIComponent(pluginName)}/admin-assets/${oldScript.src}`;
+                } else {
+                    newScript.src = oldScript.src;
+                }
+            } else {
+                newScript.textContent = oldScript.textContent;
+            }
+            oldScript.replaceWith(newScript);
+        }
+
+        // Rewrite relative CSS <link> hrefs to admin-assets endpoint
+        const links = contentDiv.querySelectorAll('link[rel="stylesheet"]');
+        for (const link of links) {
+            const href = link.getAttribute('href');
+            if (href && !href.startsWith('http') && !href.startsWith('/')) {
+                link.href = `${API_BASE_URL}/plugins/${encodeURIComponent(pluginName)}/admin-assets/${href}`;
+            }
+        }
+
+        // Rewrite relative <img> src
+        const imgs = contentDiv.querySelectorAll('img');
+        for (const img of imgs) {
+            const src = img.getAttribute('src');
+            if (src && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('data:')) {
+                img.src = `${API_BASE_URL}/plugins/${encodeURIComponent(pluginName)}/admin-assets/${src}`;
+            }
+        }
+    } catch (error) {
+        contentDiv.innerHTML = `<p class="error-message">加载插件页面失败: ${error.message}</p>`;
+        console.error(`[Plugins] Failed to load nav page for ${pluginName}:`, error);
+    }
+}
+
+/**
+ * Extract <body> content from a full HTML document string.
+ * Also extracts <style> tags from <head> and prepends them.
+ */
+function extractPageBody(html) {
+    // If it doesn't look like a full document, return as-is (it's a fragment)
+    if (!html.includes('<html') && !html.includes('<!DOCTYPE') && !html.includes('<!doctype')) {
+        return html;
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Collect <style> and <link rel="stylesheet"> from <head>
+    let headStyles = '';
+    doc.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => {
+        headStyles += el.outerHTML;
+    });
+
+    return headStyles + doc.body.innerHTML;
 }
 
 /**
@@ -93,6 +252,11 @@ function renderPluginManager(container, plugins) {
     window._pmToggle = togglePlugin;
     window._pmOpenAdmin = openPluginAdminModal;
     window._pmOpenConfig = openPluginConfig;
+    window._pmFeatureToggle = togglePluginFeature;
+    window._pmUpdate = updatePlugin;
+
+    // Silently check for updates and inject badges
+    checkPluginUpdates();
 }
 
 function renderManagerCard(plugin) {
@@ -112,8 +276,35 @@ function renderManagerCard(plugin) {
         actions += ` <button class="btn-install" onclick="window._pmOpenAdmin('${name}', '${displayName.replace(/'/g, "\\'")}')">设置</button>`;
     }
 
+    // Feature toggles for dashboardCards / adminNav
+    const hasDashCards = Array.isArray(plugin.manifest.dashboardCards) && plugin.manifest.dashboardCards.length > 0;
+    const hasNavPage = plugin.manifest.adminNav && plugin.hasAdminPage;
+    let featureToggles = '';
+    if (isEnabled && (hasDashCards || hasNavPage)) {
+        const prefs = pluginUiPrefs[name] || {};
+        featureToggles = '<div class="plugin-feature-toggles">';
+        if (hasDashCards) {
+            const checked = prefs.dashboardCards !== false ? 'checked' : '';
+            featureToggles += `
+                <label class="feature-toggle" title="在仪表盘显示此插件的卡片">
+                    <input type="checkbox" ${checked} onchange="window._pmFeatureToggle('${name}', 'dashboardCards', this.checked)">
+                    <span class="feature-toggle-label">仪表盘卡片</span>
+                </label>`;
+        }
+        if (hasNavPage) {
+            const checked = prefs.adminNav !== false ? 'checked' : '';
+            featureToggles += `
+                <label class="feature-toggle" title="在左侧导航显示此插件的页面">
+                    <input type="checkbox" ${checked} onchange="window._pmFeatureToggle('${name}', 'adminNav', this.checked)">
+                    <span class="feature-toggle-label">导航页面</span>
+                </label>`;
+        }
+        featureToggles += '</div>';
+    }
+
     return `
         <div class="plugin-card ${statusClass}" data-name="${name}" data-display="${displayName}">
+            <div class="plugin-update-badge" data-update-for="${name}"></div>
             <div class="card-header">
                 <span class="card-name">${displayName}</span>
                 <span class="card-version">v${version}</span>
@@ -123,6 +314,7 @@ function renderManagerCard(plugin) {
                 <span class="card-type">${plugin.manifest.pluginType || ''}</span>
                 ${plugin.isDistributed ? '<span class="card-type">☁️ 分布式</span>' : ''}
             </div>
+            ${featureToggles}
             <div class="card-footer">${actions}</div>
         </div>
     `;
@@ -150,6 +342,96 @@ async function togglePlugin(name, enable, btn) {
     } catch (error) {
         btn.disabled = false;
         btn.textContent = enable ? '启用' : '禁用';
+    }
+}
+
+/**
+ * Toggle a plugin UI feature (dashboardCards / adminNav) on or off.
+ */
+async function togglePluginFeature(pluginName, feature, enabled) {
+    if (!pluginUiPrefs[pluginName]) pluginUiPrefs[pluginName] = {};
+    pluginUiPrefs[pluginName][feature] = enabled;
+
+    try {
+        await apiFetch(`${API_BASE_URL}/plugin-ui-prefs`, {
+            method: 'POST',
+            body: JSON.stringify(pluginUiPrefs)
+        });
+        showMessage(`${feature === 'dashboardCards' ? '仪表盘卡片' : '导航页面'}已${enabled ? '启用' : '关闭'}，刷新页面后生效`, 'success');
+    } catch (error) {
+        // Revert on failure
+        pluginUiPrefs[pluginName][feature] = !enabled;
+        showMessage(`保存失败: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Silently check for plugin updates (cache-first, 10min TTL).
+ * Injects update badges into cards that have newer versions available.
+ */
+async function checkPluginUpdates() {
+    const now = Date.now();
+    // Use cache if fresh
+    if (now - pluginUpdatesCacheTime < UPDATE_CACHE_TTL && Object.keys(pluginUpdates).length > 0) {
+        injectUpdateBadges();
+        return;
+    }
+
+    try {
+        const result = await apiFetch(`${API_BASE_URL}/plugin-store/updates`, {}, false);
+        const updates = result?.updates || [];
+        pluginUpdates = {};
+        for (const u of updates) {
+            pluginUpdates[u.name] = { currentVersion: u.currentVersion, latestVersion: u.latestVersion };
+        }
+        pluginUpdatesCacheTime = now;
+        injectUpdateBadges();
+    } catch {
+        // Silent fail — update check is non-critical
+    }
+}
+
+function injectUpdateBadges() {
+    document.querySelectorAll('.plugin-update-badge').forEach(badge => {
+        const name = badge.dataset.updateFor;
+        const info = pluginUpdates[name];
+        if (info) {
+            badge.innerHTML = `<button class="btn-update-badge" onclick="window._pmUpdate('${name}', this)" title="${info.currentVersion} → ${info.latestVersion}">
+                <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;">upgrade</span> 更新
+            </button>`;
+            badge.classList.add('has-update');
+        } else {
+            badge.innerHTML = '';
+            badge.classList.remove('has-update');
+        }
+    });
+}
+
+async function updatePlugin(name, btn) {
+    if (!confirm(`确定要更新插件 "${name}" 吗？更新后需要重启服务生效。`)) return;
+    btn.disabled = true;
+    btn.textContent = '更新中...';
+
+    try {
+        const result = await apiFetch(`${API_BASE_URL}/plugin-store/install/${name}`, {
+            method: 'POST',
+            body: JSON.stringify({ force: true })
+        });
+        if (result.success) {
+            showMessage(`插件 ${name} 更新成功！重启服务后生效。`, 'success');
+            btn.textContent = '已更新';
+            delete pluginUpdates[name];
+            const badge = btn.closest('.plugin-update-badge');
+            if (badge) { badge.innerHTML = ''; badge.classList.remove('has-update'); }
+        } else {
+            showMessage(result.message || '更新失败', 'error');
+            btn.textContent = '更新';
+            btn.disabled = false;
+        }
+    } catch (error) {
+        showMessage(`更新失败: ${error.message}`, 'error');
+        btn.textContent = '更新';
+        btn.disabled = false;
     }
 }
 
