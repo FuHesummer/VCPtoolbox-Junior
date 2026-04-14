@@ -13,6 +13,7 @@ const { getAuthCode } = require('./modules/captchaDecoder'); // 导入统一的�
 const ToolApprovalManager = require('./modules/toolApprovalManager');
 
 const PLUGIN_DIR = path.join(__dirname, 'Plugin');
+const TVS_DIR = path.join(__dirname, 'TVStxt');
 const manifestFileName = 'plugin-manifest.json';
 const PREPROCESSOR_ORDER_FILE = path.join(__dirname, 'preprocessor_order.json');
 
@@ -34,6 +35,9 @@ class PluginManager extends EventEmitter {
         this.vectorDBManager = null; // 修复：不再自己创建，等待注入
         this.toolApprovalManager = new ToolApprovalManager(path.join(__dirname, 'modules', 'toolApprovalConfig.json'));
         this.pendingApprovals = new Map(); // requestId -> { resolve, reject, timeoutId }
+        // TVS 变量注册表：插件通过 capabilities.tvsVariables 注入的变量
+        // Map<pluginName, Array<{ key, filename, targetPath }>>
+        this.pluginTvsRegistry = new Map();
     }
 
     setWebSocketServer(wss) {
@@ -446,6 +450,139 @@ class PluginManager extends EventEmitter {
         }
     }
 
+    /**
+     * 注册插件声明的 TVS 变量（capabilities.tvsVariables）。
+     *
+     * **策略**：首次移动 + 首次注册保护
+     * - 若 TVStxt/<filename> 不存在 → 从插件目录移动过来（插件目录的 tvs/ 清空）
+     * - 若 TVStxt/<filename> 已存在 → 不覆盖（保留用户在 TvsEditor 里的修改）
+     * - 无论哪种情况，都注入 process.env[Var*]
+     * - 冲突：同名 Var 已被其他插件占用时 WARN 并跳过
+     *
+     * 这样 TVStxt/ 是唯一真相，用户通过 AdminPanel 编辑不会被下次启动覆盖。
+     * @param {object} manifest 插件 manifest（含 basePath）
+     */
+    async _registerPluginTvsVariables(manifest) {
+        const decls = manifest.capabilities?.tvsVariables;
+        if (!Array.isArray(decls) || decls.length === 0) return;
+
+        try {
+            await fs.mkdir(TVS_DIR, { recursive: true });
+        } catch {}
+
+        const registered = [];
+        for (const decl of decls) {
+            const key = decl?.key;
+            const relFile = decl?.file;
+            if (!key || typeof key !== 'string' || !key.startsWith('Var')) {
+                console.warn(`[PluginManager] [TVS] ${manifest.name} 声明了非法 key "${key}"（必须以 Var 开头），跳过`);
+                continue;
+            }
+            if (!relFile || typeof relFile !== 'string' || !relFile.toLowerCase().endsWith('.txt')) {
+                console.warn(`[PluginManager] [TVS] ${manifest.name}.${key} 声明的 file "${relFile}" 必须是 .txt，跳过`);
+                continue;
+            }
+
+            // 冲突检测：是否已被其他插件占用
+            let conflict = false;
+            for (const [otherPlugin, otherDecls] of this.pluginTvsRegistry.entries()) {
+                if (otherPlugin === manifest.name) continue;
+                if (otherDecls.some(d => d.key === key)) {
+                    console.warn(`[PluginManager] [TVS] ${manifest.name}.${key} 与已注册插件 "${otherPlugin}" 冲突，跳过`);
+                    conflict = true;
+                    break;
+                }
+            }
+            if (conflict) continue;
+
+            const srcPath = path.join(manifest.basePath, relFile);
+            const filename = path.basename(relFile);
+            const targetPath = path.join(TVS_DIR, filename);
+
+            try {
+                const targetExists = fsSync.existsSync(targetPath);
+                const srcExists = fsSync.existsSync(srcPath);
+
+                if (!targetExists && srcExists) {
+                    // 首次注册：从插件目录移动到 TVStxt/（插件目录文件消失，TVStxt 成为唯一真相）
+                    await fs.rename(srcPath, targetPath).catch(async (err) => {
+                        // 跨分区 rename 可能失败，降级为 copy + unlink
+                        if (err.code === 'EXDEV') {
+                            await fs.copyFile(srcPath, targetPath);
+                            await fs.unlink(srcPath);
+                        } else {
+                            throw err;
+                        }
+                    });
+                    console.log(`[PluginManager] [TVS] ${manifest.name} 首次注册 ${key}：已移动 ${relFile} → TVStxt/${filename}`);
+                } else if (!targetExists && !srcExists) {
+                    // 两边都没有 → 协议声明了但文件缺失
+                    console.warn(`[PluginManager] [TVS] ${manifest.name}.${key} 声明的文件 ${srcPath} 不存在，跳过`);
+                    continue;
+                } else if (targetExists && srcExists) {
+                    // TVStxt 已有文件（用户改过） + 插件也保留了源文件（异常）→ 以 TVStxt 为准，清理插件目录冗余
+                    try { await fs.unlink(srcPath); } catch {}
+                    if (this.debugMode) {
+                        console.log(`[PluginManager] [TVS] ${manifest.name} 重复注册 ${key}：保留 TVStxt/${filename}（用户版本），清理插件冗余`);
+                    }
+                } else {
+                    // TVStxt 已有（插件目录没有）→ 正常情况，沿用
+                    if (this.debugMode) {
+                        console.log(`[PluginManager] [TVS] ${manifest.name} 沿用 ${key} → TVStxt/${filename}`);
+                    }
+                }
+
+                process.env[key] = filename;
+                registered.push({ key, filename, targetPath, srcPath });
+            } catch (e) {
+                console.warn(`[PluginManager] [TVS] ${manifest.name}.${key} 注册失败 (${srcPath}): ${e.message}`);
+            }
+        }
+
+        if (registered.length > 0) {
+            this.pluginTvsRegistry.set(manifest.name, registered);
+        }
+    }
+
+    /**
+     * 反注册插件的 TVS 变量。
+     *
+     * **两种模式**：
+     * - `mode='reload'`（默认）：只清理 process.env 和 registry（文件留在 TVStxt/，下次注册时会沿用）
+     * - `mode='uninstall'`：同时删除 TVStxt/ 下的文件（插件卸载时彻底清理，配合 store.uninstall 一起删除插件目录）
+     *
+     * @param {string} pluginName
+     * @param {'reload'|'uninstall'} mode
+     */
+    async _unregisterPluginTvsVariables(pluginName, mode = 'reload') {
+        const registered = this.pluginTvsRegistry.get(pluginName);
+        if (!registered) return;
+
+        for (const { key, targetPath } of registered) {
+            // 仅当 env 仍指向本插件注册的文件时才清理，避免误删用户手动配置
+            if (process.env[key] === path.basename(targetPath)) {
+                delete process.env[key];
+            }
+
+            if (mode === 'uninstall') {
+                // 卸载模式：删除 TVStxt/ 的文件（插件目录紧接着会被 store.uninstall 整体删除）
+                try {
+                    await fs.unlink(targetPath);
+                    if (this.debugMode) {
+                        console.log(`[PluginManager] [TVS] ${pluginName} 卸载：已删除 TVStxt/${path.basename(targetPath)}`);
+                    }
+                } catch (e) {
+                    if (e.code !== 'ENOENT' && this.debugMode) {
+                        console.warn(`[PluginManager] [TVS] ${pluginName} 删除 ${targetPath} 失败: ${e.message}`);
+                    }
+                }
+            }
+            // reload 模式：不动 TVStxt/ 文件，下次注册时会沿用
+        }
+
+        this.pluginTvsRegistry.delete(pluginName);
+    }
+
     async loadPlugins() {
         console.log('[PluginManager] Starting plugin discovery...');
         // 1. 清理现有插件状态
@@ -475,6 +612,13 @@ class PluginManager extends EventEmitter {
                     console.error(`[PluginManager] Error during hot-reload shutdown of a plugin:`, e.message);
                 }
             }
+        }
+
+        // 反注册所有本地插件的 TVS 变量（保留分布式插件的）
+        const localTvsNames = Array.from(this.pluginTvsRegistry.keys())
+            .filter(n => !distributedPlugins.has(n));
+        for (const name of localTvsNames) {
+            await this._unregisterPluginTvsVariables(name);
         }
 
         this.plugins = distributedPlugins; // 仅保留分布式插件，本地插件将被重新发现
@@ -509,6 +653,9 @@ class PluginManager extends EventEmitter {
 
                         this.plugins.set(manifest.name, manifest);
                         console.log(`[PluginManager] Loaded manifest: ${manifest.displayName} (${manifest.name}, Type: ${manifest.pluginType})`);
+
+                        // 注册插件声明的 TVS 变量（capabilities.tvsVariables）
+                        await this._registerPluginTvsVariables(manifest);
 
                         const isPreprocessor = manifest.pluginType === 'messagePreprocessor' || manifest.pluginType === 'hybridservice';
                         const isService = manifest.pluginType === 'service' || manifest.pluginType === 'hybridservice';

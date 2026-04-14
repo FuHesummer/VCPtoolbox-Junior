@@ -526,6 +526,13 @@ module.exports = {
         "isDynamic": false
       }
     ],
+    "tvsVariables": [
+      {
+        "key": "VarMyPlugin",
+        "file": "tvs/myplugin.txt",
+        "description": "插件自带工具使用指南（Junior v2.1+）"
+      }
+    ],
     "invocationCommands": [
       {
         "commandIdentifier": "CommandName",
@@ -542,6 +549,8 @@ module.exports = {
   }
 }
 ```
+
+**tvsVariables 说明**：插件目录下放 `tvs/myplugin.txt`（给 AI 看的工具使用指南），Junior 加载时自动把文件 move 到主项目 `TVStxt/` 并注入 `process.env.VarMyPlugin`。Agent prompt 里 `{{VarMyPlugin}}` 会展开为文件内容。详细生命周期见 [PLUGIN_PROTOCOL.md](./PLUGIN_PROTOCOL.md) tvsVariables 章节。
 
 ### 3.6 dependencies 字段
 

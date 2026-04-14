@@ -123,6 +123,7 @@ VCPtoolbox-Junior/
 - 静态插件通过 `systemPromptPlaceholders` 注入，格式 `{{VCP...}}`
 - VCP 工具协议使用中文分隔符 `「始」「末」`（`<<<[TOOL_REQUEST]>>>`），非 OpenAI function-calling
 - 变量系统：`{{Agent*}}`, `{{Tar*}}`, `{{Var*}}`, `{{Sar*}}`，可加载 `TVStxt/*.txt`
+- TVS 工具指南协议（v2.1+）：插件通过 `capabilities.tvsVariables` 自带 `tvs/*.txt`，Plugin.js 首次加载时 move 到 `TVStxt/`（保留用户改动），卸载时删除。详见 [docs/PLUGIN_PROTOCOL.md](./docs/PLUGIN_PROTOCOL.md)
 
 ### 路由层
 - 鉴权在 `server.js` 挂载层处理（`/admin_api`、`/AdminPanel`、bearer 链）

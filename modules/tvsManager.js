@@ -9,6 +9,8 @@ class TvsManager {
     constructor() {
         this.contentCache = new Map();
         this.debugMode = false;
+        // 已报告过的缺失/错误文件（避免同一文件反复污染日志）
+        this.reportedMisses = new Set();
     }
 
     setTvsDir(dirPath) {
@@ -37,6 +39,13 @@ class TvsManager {
             });
 
             watcher
+                .on('add', (filePath) => {
+                    // 新文件出现（如插件注册）时清理 miss 标记，让 {{Var*}} 重新尝试读取
+                    const filename = path.basename(filePath);
+                    if (this.reportedMisses.has(filename)) {
+                        this.reportedMisses.delete(filename);
+                    }
+                })
                 .on('change', (filePath) => {
                     const filename = path.basename(filePath);
                     if (this.contentCache.has(filename)) {
@@ -80,7 +89,15 @@ class TvsManager {
             return content;
         } catch (error) {
             // Don't cache errors, so it can be retried if the file appears later.
-            console.error(`[TvsManager] Error reading file '${filename}':`, error.message);
+            // 同一文件只 WARN 一次，避免日志污染（chokidar 会在文件恢复时清除标记）
+            if (!this.reportedMisses.has(filename)) {
+                this.reportedMisses.add(filename);
+                if (error.code === 'ENOENT') {
+                    console.warn(`[TvsManager] 变量文件 '${filename}' 不存在（可能对应插件未安装，后续不再重复提示）`);
+                } else {
+                    console.warn(`[TvsManager] 读取 '${filename}' 失败: ${error.message}（后续不再重复提示）`);
+                }
+            }
             if (error.code === 'ENOENT') {
                 return `[变量文件 (${filename}) 未找到]`;
             }

@@ -18,3 +18,4 @@
 | 2026-04-14 | e3a38d35 | — | feat(panel): AdminPanel Vue 多页面表单化重构 + 数据/UI/协议 bug 修复 | 11 | 14 | high |
 | 2026-04-14 | 019d8ba0 | — | feat(panel): Toolbox/TVS/Notes/NewAPI 深度重构 + 后端多维聚合 | 12 | 6 | high |
 | 2026-04-14 | 019d8c20 | — | feat(plugin-protocol): 插件 admin 协议 v2.0 + 4 大页面深度增强 + FoldingStore 修复 | 5 | 1 | high |
+| 2026-04-14 | 019d8c98 | — | feat(plugin-protocol): TVS 工具指南协议 v2.1（tvsVariables，move 策略） | 5 | 1 | med |

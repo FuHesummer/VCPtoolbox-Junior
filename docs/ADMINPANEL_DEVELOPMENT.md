@@ -257,6 +257,47 @@ module.exports = {
 
 `<iframe>` 的 src 走 `/admin_api/plugins/:name/admin-page`（返回 `res.sendFile(admin/index.html)`，带 no-cache 响应头方便迭代）。
 
+### 5.5.5 `tvsVariables`（TVS 工具指南协议，Junior v2.1+）
+
+插件可通过 `capabilities.tvsVariables` 自带"AI 工具使用指南"txt 文件（类似 MCP 工具描述），由 Junior 自动管理到主项目 `TVStxt/` 并注入 `{{VarXxx}}` 占位符。用户在 AdminPanel「变量编辑器」改这些文件不会被下次启动覆盖。
+
+**manifest 声明**：
+```json
+{
+  "capabilities": {
+    "tvsVariables": [
+      {
+        "key": "VarMyPlugin",
+        "file": "tvs/myplugin.txt",
+        "description": "插件工具使用指南"
+      }
+    ]
+  }
+}
+```
+
+**生命周期**（由 [Plugin.js](../Plugin.js) `_registerPluginTvsVariables` / `_unregisterPluginTvsVariables` 实现）：
+
+| 场景 | TVStxt/ 文件 | 插件目录 tvs/*.txt | process.env |
+|------|-------------|------------------|-------------|
+| 首次安装 / 启动（TVStxt 无文件）| 新建（**move** 自插件，插件目录文件消失）| 被移走 | 注入 |
+| 重启 / reload（TVStxt 已有）| 保留（用户在 TvsEditor 的改动不丢）| 仍在插件里 | 重注入 |
+| 卸载（通过 PluginStore）| 删除 | 随插件目录整体删除 | 清理 |
+
+**字段约束**：
+- `key` 必须以 `Var` 开头（如 `VarDreamTool`、`VarFileTool`）
+- `file` 必须以 `.txt` 结尾，相对于插件根目录
+- 同名 `Var` 被多个插件声明 → 启动 WARN 跳过冲突项
+
+**与 AdminPanel TvsEditor 的关系**：AdminPanel 的「变量编辑器」（`/admin_api/tvsvars/*`）直接读写 `TVStxt/` 下文件。因为首次注册后 TVStxt 是唯一真相，用户在这里的修改会持久保留。
+
+**内置已协议化插件**（参考实现）：
+- AgentDream → `VarDreamTool` / `tvs/dreamtool.txt`
+- DailyNote → `VarDailyNoteGuide` / `tvs/Dailynote.txt`
+- VCPForum → `VarForum` / `tvs/ToolForum.txt`
+- FileOperator → `VarFileTool` / `tvs/filetool.txt`
+- MIDITranslator → `VarMIDITranslator` / `tvs/MIDITranslator.txt`
+
 ---
 
 ## 6. 本地调试与排错

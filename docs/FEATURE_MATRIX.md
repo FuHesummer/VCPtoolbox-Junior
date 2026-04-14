@@ -317,7 +317,7 @@ module.exports = {
 | **入口函数** | 综合调用 `processMessages()`, `processToolCall()`, 占位符获取 |
 | **触发条件** | 根据使用场景触发不同能力 |
 | **处理流程** | 1. 启动时调用 `initialize()` → 2. 对话时调用 `processMessages()` → 3. 工具调用时调用 `processToolCall()` → 4. 占位符替换时获取缓存值 |
-| **相关配置** | `capabilities.systemPromptPlaceholders`, `capabilities.invocationCommands` |
+| **相关配置** | `capabilities.systemPromptPlaceholders`, `capabilities.tvsVariables`, `capabilities.invocationCommands` |
 | **输出格式** | 根据调用类型返回不同格式 |
 | **限制条件** | 最灵活但实现最复杂；使用 `direct` 协议 |
 

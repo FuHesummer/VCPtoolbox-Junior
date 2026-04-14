@@ -15,6 +15,13 @@
     "timeout": 30000
   },
   "capabilities": {
+    "tvsVariables": [
+      {
+        "key": "VarDailyNoteGuide",
+        "file": "tvs/Dailynote.txt",
+        "description": "日记系统使用指南（AI 创建/更新日记的提示词）"
+      }
+    ],
     "invocationCommands": [
       {
         "commandIdentifier": "create",

@@ -61,6 +61,42 @@ module.exports = { initialize, shutdown, pluginAdminRouter };
 
 **参考实现**：[VCPtoolbox-Junior-Plugins/AgentDream/](../../VCPtoolbox-Junior-Plugins/AgentDream/) 梦系统插件（hybridservice + native 面板）。
 
+## TVS 工具指南协议（Junior 新增）
+
+插件可自带"工具使用指南 txt"（类似 MCP 工具描述），通过 `capabilities.tvsVariables` 声明：
+
+```json
+{
+  "capabilities": {
+    "tvsVariables": [
+      {
+        "key": "VarDreamTool",
+        "file": "tvs/dreamtool.txt",
+        "description": "AI 做梦系统工具使用指南"
+      }
+    ]
+  }
+}
+```
+
+**加载行为**（"首次移动 + 保留用户修改"策略）：
+- TVStxt/ 无同名文件 → **移动** `<pluginDir>/tvs/dreamtool.txt` → `TVStxt/dreamtool.txt`（插件目录文件消失）
+- TVStxt/ 已有同名文件 → **不覆盖**（保留用户在 TvsEditor 里的修改）
+- 注入 `process.env.VarDreamTool = 'dreamtool.txt'`
+- Agent 提示词里 `{{VarDreamTool}}` 会被 `messageProcessor.js` 展开为 TVStxt 下文件内容
+
+**两种卸载模式**：
+- `reload`（默认，重启 / hotReload 时）：只清理 `process.env` + registry，保留 TVStxt/ 文件
+- `uninstall`（通过 PluginStore 卸载插件时）：删除 TVStxt/ 下的文件（插件目录紧接着被整体删除，彻底清理）
+
+**约束**：
+- `key` 必须以 `Var` 开头
+- `file` 必须以 `.txt` 结尾
+- 不要在 `config.env` 里重复声明（插件协议会自动注入）
+- 同名 `Var` 被多个插件声明 → 启动 WARN 跳过冲突项
+
+实现：[Plugin.js](../Plugin.js) `_registerPluginTvsVariables()` / `_unregisterPluginTvsVariables()`。
+
 ## 高复杂度插件
 
 | 插件 | 规模 | 说明 |
