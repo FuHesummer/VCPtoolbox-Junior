@@ -1,0 +1,55 @@
+// VCPtoolbox-Junior Pastel Pink Theme
+// 从 AdminPanel/style.css 迁移而来 — 保留粉色品牌一致性
+// Material Symbols 图标字体从 Google Fonts 引入
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+:root {
+  // Background — 暖奶油粉
+  --primary-bg: #faf5f7;
+  --secondary-bg: rgba(255, 255, 255, 0.6);
+  --tertiary-bg: #ffffff;
+  --accent-bg: rgba(212, 116, 142, 0.06);
+
+  // Text — 梅紫系
+  --primary-text: #3d2c3e;
+  --secondary-text: #8a7490;
+  --highlight-text: #c9627e;
+
+  // Interactive
+  --border-color: rgba(212, 116, 142, 0.15);
+  --button-bg: #d4748e;
+  --button-hover-bg: #c4647e;
+  --danger-color: #d95555;
+  --danger-hover-bg: #c04040;
+  --input-bg: #fff8fa;
+
+  // Scrollbar
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(212, 116, 142, 0.18);
+  --scrollbar-thumb-hover: rgba(212, 116, 142, 0.35);
+
+  // Dashboard
+  --cpu-color: #d4748e;
+  --memory-color: #6dbb8a;
+
+  // Glass
+  --glass-blur: blur(18px);
+  color-scheme: light;
+
+  // Radii
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 100px;
+
+  // Card — 磨砂白玻璃
+  --card-bg: rgba(255, 255, 255, 0.55);
+  --card-border: 1px solid rgba(212, 116, 142, 0.12);
+  --card-shadow: 0 4px 20px rgba(180, 120, 140, 0.1);
+  --card-radius: 18px;
+
+  // Layout
+  --topbar-height: 56px;
+  --sidebar-width: 260px;
+  --content-padding: 12px;
+}
