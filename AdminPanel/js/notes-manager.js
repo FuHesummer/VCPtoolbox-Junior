@@ -4,16 +4,38 @@ import { apiFetch, showMessage, escapeHTML } from './utils.js';
 const API_BASE_URL = '/admin_api';
 
 let currentNotesFolder = null;
+let currentNotesMode = 'diary'; // 'diary' | 'knowledge' | 'public'
 let selectedNotes = new Set();
 let easyMDE = null;
 let ragTagsData = {};
 let currentRagFolder = null;
 
+const NOTES_MODE_CONFIG = {
+    diary: { title: '日记管理', desc: 'Agent 日记与 RAG 标签', icon: 'auto_stories' },
+    knowledge: { title: '知识库管理', desc: 'Agent 知识库与 RAG 标签', icon: 'school' },
+    public: { title: '公共知识库', desc: '公共知识与 RAG 标签', icon: 'menu_book' },
+};
+
 /**
  * 初始化日记管理器。
  */
-export async function initializeDailyNotesManager() {
-    console.log('Initializing Daily Notes Manager...');
+export async function initializeDailyNotesManager(mode = 'diary') {
+    console.log(`Initializing Daily Notes Manager (mode: ${mode})...`);
+    currentNotesMode = mode;
+    currentNotesFolder = null;
+
+    // Update page header based on mode
+    const cfg = NOTES_MODE_CONFIG[mode] || NOTES_MODE_CONFIG.diary;
+    const section = document.getElementById('daily-notes-manager-section');
+    if (section) {
+        const h2 = section.querySelector('.page-header h2');
+        const desc = section.querySelector('.page-header .page-desc');
+        const icon = section.querySelector('.page-header .page-icon');
+        if (h2) h2.textContent = cfg.title;
+        if (desc) desc.textContent = cfg.desc;
+        if (icon) icon.textContent = cfg.icon;
+    }
+
     const notesListViewDiv = document.getElementById('notes-list-view');
     const noteEditorAreaDiv = document.getElementById('note-editor-area');
     const ragTagsConfigAreaDiv = document.getElementById('rag-tags-config-area');
@@ -29,7 +51,7 @@ export async function initializeDailyNotesManager() {
     if (moveSelectedNotesButton) moveSelectedNotesButton.disabled = true;
     if (deleteSelectedNotesButton) deleteSelectedNotesButton.disabled = true;
     if (searchDailyNotesInput) searchDailyNotesInput.value = '';
-    
+
     setupEventListeners();
     await loadRagTagsConfig();
     await loadNotesFolders();
@@ -104,35 +126,119 @@ async function loadNotesFolders() {
         notesFolderListUl.innerHTML = '';
         moveTargetFolderSelect.innerHTML = '<option value="">选择目标文件夹...</option>';
 
-        if (data.folders && data.folders.length > 0) {
+        // Populate move-target select with flat list
+        if (data.folders) {
             data.folders.forEach(folder => {
-                const li = document.createElement('li');
-                li.textContent = folder;
-                li.dataset.folderName = folder;
-                li.addEventListener('click', () => {
-                    loadNotesForFolder(folder);
-                    notesFolderListUl.querySelectorAll('li').forEach(item => item.classList.remove('active'));
-                    li.classList.add('active');
-                });
-                notesFolderListUl.appendChild(li);
-
                 const option = document.createElement('option');
                 option.value = folder;
                 option.textContent = folder;
                 moveTargetFolderSelect.appendChild(option);
             });
-            if (!currentNotesFolder || !data.folders.includes(currentNotesFolder)) {
-                if (notesFolderListUl.firstChild) {
-                     notesFolderListUl.firstChild.click();
-                }
-            } else {
-                 const currentFolderLi = notesFolderListUl.querySelector(`li[data-folder-name="${currentNotesFolder}"]`);
-                 if (currentFolderLi) currentFolderLi.classList.add('active');
-            }
-        } else {
-            notesFolderListUl.innerHTML = '<li>没有找到日记文件夹。</li>';
-            notesListViewDiv.innerHTML = '<p>没有日记可以显示。</p>';
         }
+
+        // Helper: create a clickable folder item
+        function createFolderItem(folderName, label) {
+            const li = document.createElement('li');
+            li.dataset.folderName = folderName;
+            li.innerHTML = `<span class="folder-label">${escapeHTML(label)}</span>`;
+            li.addEventListener('click', () => {
+                loadNotesForFolder(folderName);
+                notesFolderListUl.querySelectorAll('li:not(.folder-group)').forEach(item => item.classList.remove('active'));
+                notesFolderListUl.querySelectorAll('.folder-group-list li').forEach(item => item.classList.remove('active'));
+                li.classList.add('active');
+            });
+            return li;
+        }
+
+        // Helper: create a collapsible Agent group
+        function createAgentGroup(agentName) {
+            const group = document.createElement('li');
+            group.className = 'folder-group';
+            const header = document.createElement('div');
+            header.className = 'folder-group-header';
+            header.innerHTML = `<span class="material-symbols-outlined folder-group-icon">smart_toy</span>` +
+                `<span class="folder-group-title">${escapeHTML(agentName)}</span>` +
+                `<span class="material-symbols-outlined folder-group-arrow">expand_more</span>`;
+            const list = document.createElement('ul');
+            list.className = 'folder-group-list';
+            header.addEventListener('click', () => group.classList.toggle('collapsed'));
+            group.appendChild(header);
+            group.appendChild(list);
+            return { group, list };
+        }
+
+        let hasItems = false;
+
+        // === Mode: diary — Agent diary grouped by agent ===
+        if (currentNotesMode === 'diary' && data.agents) {
+            for (const agent of data.agents) {
+                const diaries = agent.notebooks.filter(n => n.type === 'diary');
+                if (diaries.length === 0) continue;
+                const { group, list } = createAgentGroup(agent.name);
+                for (const nb of diaries) {
+                    list.appendChild(createFolderItem(nb.folderName, nb.displayName.split('/').pop()));
+                }
+                notesFolderListUl.appendChild(group);
+                hasItems = true;
+            }
+        }
+
+        // === Mode: knowledge — Agent knowledge grouped by agent + thinking clusters ===
+        if (currentNotesMode === 'knowledge') {
+            // Agent knowledge folders
+            if (data.agents) {
+                for (const agent of data.agents) {
+                    const knowledge = agent.notebooks.filter(n => n.type === 'knowledge');
+                    if (knowledge.length === 0) continue;
+                    const { group, list } = createAgentGroup(agent.name);
+                    for (const nb of knowledge) {
+                        list.appendChild(createFolderItem(nb.folderName, nb.displayName.split('/').pop()));
+                    }
+                    notesFolderListUl.appendChild(group);
+                    hasItems = true;
+                }
+            }
+            // Thinking clusters as a separate group
+            if (data.thinking && data.thinking.length > 0) {
+                const tGroup = document.createElement('li');
+                tGroup.className = 'folder-group';
+                const tHeader = document.createElement('div');
+                tHeader.className = 'folder-group-header';
+                tHeader.innerHTML = `<span class="material-symbols-outlined folder-group-icon">psychology</span>` +
+                    `<span class="folder-group-title">思维簇</span>` +
+                    `<span class="material-symbols-outlined folder-group-arrow">expand_more</span>`;
+                const tList = document.createElement('ul');
+                tList.className = 'folder-group-list';
+                tHeader.addEventListener('click', () => tGroup.classList.toggle('collapsed'));
+                tGroup.appendChild(tHeader);
+                tGroup.appendChild(tList);
+                for (const t of data.thinking) {
+                    tList.appendChild(createFolderItem(t.folderName, t.displayName.split('/').pop()));
+                }
+                notesFolderListUl.appendChild(tGroup);
+                hasItems = true;
+            }
+        }
+
+        // === Mode: public — shared knowledge/ folders (flat list, no grouping) ===
+        if (currentNotesMode === 'public' && data.public) {
+            for (const folder of data.public) {
+                notesFolderListUl.appendChild(createFolderItem(folder, folder));
+                hasItems = true;
+            }
+        }
+
+        if (!hasItems) {
+            const emptyLabels = { diary: '暂无 Agent 日记目录', knowledge: '暂无 Agent 知识库目录', public: '暂无公共知识库' };
+            notesFolderListUl.innerHTML = `<li class="folder-empty">${emptyLabels[currentNotesMode] || '暂无内容'}</li>`;
+            notesListViewDiv.innerHTML = '';
+            return;
+        }
+
+        // Auto-click first available item
+        const firstItem = notesFolderListUl.querySelector('.folder-group-list li') ||
+                          notesFolderListUl.querySelector('li[data-folder-name]');
+        if (firstItem) firstItem.click();
     } catch (error) {
         notesFolderListUl.innerHTML = '<li>加载文件夹列表失败。</li>';
         showMessage('加载文件夹列表失败: ' + error.message, 'error');
@@ -153,7 +259,9 @@ async function loadNotesForFolder(folderName) {
     if(searchDailyNotesInput) searchDailyNotesInput.value = '';
 
     try {
-        const data = await apiFetch(`${API_BASE_URL}/dailynotes/folder/${folderName}`);
+        // folderName 可能含 "/"（如 "Aemeath/diary"），必须 encode 才能命中 :folderName 单段路由
+        // suppressErrorToast: 404 在这里是"暂无日记"语义，由下方 catch 自行展示，避免弹失败 toast
+        const data = await apiFetch(`${API_BASE_URL}/dailynotes/folder/${encodeURIComponent(folderName)}`, { suppressErrorToast: true });
         notesListViewDiv.innerHTML = '';
         if (data.notes && data.notes.length > 0) {
             data.notes.forEach(note => {
@@ -161,12 +269,17 @@ async function loadNotesForFolder(folderName) {
                 notesListViewDiv.appendChild(card);
             });
         } else {
-            notesListViewDiv.innerHTML = `<p>文件夹 "${folderName}" 中没有日记。</p>`;
+            notesListViewDiv.innerHTML = `<p>文件夹 "${folderName}" 中暂无日记。</p>`;
         }
         displayRagTagsForFolder(folderName);
     } catch (error) {
-        notesListViewDiv.innerHTML = `<p>加载文件夹 "${folderName}" 中的日记失败。</p>`;
-        showMessage(`加载日记失败: ${error.message}`, 'error');
+        // 404 视为"暂无日记"语义（目录不存在 / 空），不弹错提示；其他错误仍展示失败
+        if (error && error.status === 404) {
+            notesListViewDiv.innerHTML = `<p>文件夹 "${folderName}" 中暂无日记。</p>`;
+        } else {
+            notesListViewDiv.innerHTML = `<p>加载文件夹 "${folderName}" 中的日记失败。</p>`;
+            showMessage(`加载日记失败: ${error.message}`, 'error');
+        }
     }
 }
 
@@ -284,7 +397,7 @@ async function openNoteForEditing(folderName, fileName) {
 
     if (notesActionStatusSpan) notesActionStatusSpan.textContent = '';
     try {
-        const data = await apiFetch(`${API_BASE_URL}/dailynotes/note/${folderName}/${fileName}`);
+        const data = await apiFetch(`${API_BASE_URL}/dailynotes/note/${encodeURIComponent(folderName)}/${encodeURIComponent(fileName)}`);
         if (editingNoteFolderInput) editingNoteFolderInput.value = folderName;
         if (editingNoteFileInput) editingNoteFileInput.value = fileName;
         
@@ -330,7 +443,7 @@ async function saveNoteChanges() {
     }
     if (noteEditorStatusSpan) noteEditorStatusSpan.textContent = '正在保存...';
     try {
-        await apiFetch(`${API_BASE_URL}/dailynotes/note/${folderName}/${fileName}`, {
+        await apiFetch(`${API_BASE_URL}/dailynotes/note/${encodeURIComponent(folderName)}/${encodeURIComponent(fileName)}`, {
             method: 'POST',
             body: JSON.stringify({ content })
         });
@@ -377,7 +490,9 @@ async function moveSelectedNotesHandler() {
     }
 
     const notesToMove = Array.from(selectedNotes).map(noteId => {
-        const [folder, file] = noteId.split('/');
+        const lastSlash = noteId.lastIndexOf('/');
+        const folder = noteId.substring(0, lastSlash);
+        const file = noteId.substring(lastSlash + 1);
         return { folder, file };
     });
 
@@ -427,7 +542,9 @@ async function deleteSelectedNotesHandler() {
     }
 
     const notesToDelete = Array.from(selectedNotes).map(noteId => {
-        const [folder, file] = noteId.split('/');
+        const lastSlash = noteId.lastIndexOf('/');
+        const folder = noteId.substring(0, lastSlash);
+        const file = noteId.substring(lastSlash + 1);
         return { folder, file };
     });
 

@@ -55,6 +55,9 @@ export async function checkAuthStatus() {
  */
 export async function apiFetch(url, options = {}, showLoader = true) {
     if (showLoader) showLoading(true);
+    // suppressErrorToast: 调用方希望自行处理错误展示（如 404 → "暂无日记"），不让 apiFetch 弹默认 toast
+    const suppressErrorToast = options.suppressErrorToast === true;
+    delete options.suppressErrorToast;
     try {
         const defaultHeaders = {
             'Content-Type': 'application/json',
@@ -72,13 +75,15 @@ export async function apiFetch(url, options = {}, showLoader = true) {
                 }
                 return new Promise(() => {}); // 中断后续逻辑
             }
-            
+
             let errorData = { error: `HTTP error ${response.status}`, details: response.statusText };
             try {
                 const jsonError = await response.json();
                 errorData = { ...errorData, ...jsonError };
             } catch (e) { /* Ignore if response is not JSON */ }
-            throw new Error(errorData.message || errorData.error || errorData.details || `HTTP error ${response.status}`);
+            const err = new Error(errorData.message || errorData.error || errorData.details || `HTTP error ${response.status}`);
+            err.status = response.status; // 让调用方能按状态码分支处理
+            throw err;
         }
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
@@ -88,7 +93,9 @@ export async function apiFetch(url, options = {}, showLoader = true) {
         }
     } catch (error) {
         console.error('API Fetch Error:', error.message, error);
-        showMessage(`操作失败: ${error.message}`, 'error');
+        if (!suppressErrorToast) {
+            showMessage(`操作失败: ${error.message}`, 'error');
+        }
         throw error;
     } finally {
         if (showLoader) showLoading(false);
