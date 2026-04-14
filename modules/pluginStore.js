@@ -20,6 +20,151 @@ const STORE_CACHE_FILE = path.join(PLUGIN_DIR, '.store-cache.json');
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 const STALE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h stale fallback on error
 
+// In-memory tree cache — shared between listRemote() and install()
+let _treeCache = null;
+let _treeCacheTime = 0;
+const TREE_CACHE_TTL = 10 * 60 * 1000; // 10 min in-memory
+const TREE_CACHE_FILE = path.join(PLUGIN_DIR, '.tree-cache.json');
+const TREE_FILE_TTL = 24 * 60 * 60 * 1000; // 24h file cache
+
+/**
+ * Get repo file tree — zero GitHub API calls.
+ * Priority: memory cache → file cache → tarball download (codeload.github.com, no API quota)
+ * Falls back to GitHub API only as last resort.
+ */
+async function getRepoTree() {
+    const now = Date.now();
+
+    // 1. In-memory cache
+    if (_treeCache && (now - _treeCacheTime) < TREE_CACHE_TTL) {
+        return _treeCache;
+    }
+
+    // 2. File cache (24h)
+    try {
+        const data = JSON.parse(await fs.readFile(TREE_CACHE_FILE, 'utf-8'));
+        if (data.tree && data.tree.tree && (now - data.timestamp) < TREE_FILE_TTL) {
+            _treeCache = data.tree;
+            _treeCacheTime = now;
+            return data.tree;
+        }
+    } catch { /* no file cache */ }
+
+    // 3. Download tarball from codeload.github.com (NOT rate-limited like API)
+    try {
+        console.log('[PluginStore] Fetching repo tarball to build file tree (no API quota cost)...');
+        const tree = await buildTreeFromTarball();
+        _treeCache = tree;
+        _treeCacheTime = now;
+        await fs.writeFile(TREE_CACHE_FILE, JSON.stringify({ timestamp: now, tree }), 'utf-8').catch(() => {});
+        console.log(`[PluginStore] Tree built from tarball: ${tree.tree.length} entries`);
+        return tree;
+    } catch (tarErr) {
+        console.warn(`[PluginStore] Tarball fetch failed: ${tarErr.message}`);
+    }
+
+    // 4. Last resort: GitHub API (may 403)
+    try {
+        const tree = await githubApi(`/repos/${REPO}/git/trees/main?recursive=1`);
+        if (tree && tree.tree) {
+            _treeCache = tree;
+            _treeCacheTime = now;
+            await fs.writeFile(TREE_CACHE_FILE, JSON.stringify({ timestamp: now, tree }), 'utf-8').catch(() => {});
+            return tree;
+        }
+    } catch (apiErr) {
+        console.warn(`[PluginStore] Tree API also failed: ${apiErr.message}`);
+    }
+
+    throw new Error('无法获取插件仓库文件列表。请检查网络连接。');
+}
+
+/**
+ * Download repo tarball and parse file entries from tar headers.
+ * Uses codeload.github.com which has no API rate limits.
+ * Only parses tar headers for file paths — doesn't extract content.
+ */
+function buildTreeFromTarball() {
+    const zlib = require('zlib');
+    return new Promise((resolve, reject) => {
+        const url = `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
+        https.get(url, { headers: { 'User-Agent': 'VCPtoolbox-Junior-PluginStore' } }, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                https.get(res.headers.location, (res2) => {
+                    parseTarStream(res2, resolve, reject);
+                }).on('error', reject);
+                return;
+            }
+            if (res.statusCode !== 200) {
+                reject(new Error(`Tarball download failed: ${res.statusCode}`));
+                return;
+            }
+            parseTarStream(res, resolve, reject);
+        }).on('error', reject);
+    });
+}
+
+function parseTarStream(stream, resolve, reject) {
+    const zlib = require('zlib');
+    const gunzip = zlib.createGunzip();
+    const entries = [];
+    let buffer = Buffer.alloc(0);
+    let prefixToStrip = ''; // e.g. "VCPtoolbox-Junior-Plugins-main/"
+
+    gunzip.on('data', (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        // Parse tar 512-byte blocks
+        while (buffer.length >= 512) {
+            const header = buffer.subarray(0, 512);
+            // Check for zero block (end of archive)
+            if (header.every(b => b === 0)) {
+                buffer = buffer.subarray(512);
+                continue;
+            }
+            // Extract filename from tar header (bytes 0-99)
+            let name = header.subarray(0, 100).toString('utf-8').replace(/\0+$/, '');
+            // USTAR prefix (bytes 345-499)
+            const prefix = header.subarray(345, 500).toString('utf-8').replace(/\0+$/, '');
+            if (prefix) name = prefix + '/' + name;
+
+            // Extract size from header (bytes 124-135, octal)
+            const sizeStr = header.subarray(124, 136).toString('utf-8').replace(/\0+$/, '').trim();
+            const size = parseInt(sizeStr, 8) || 0;
+
+            // Type flag (byte 156): '0' or '\0' = regular file, '5' = directory
+            const typeFlag = header[156];
+            const isFile = typeFlag === 48 || typeFlag === 0; // '0' or NUL
+
+            // Auto-detect and strip the root directory prefix
+            if (!prefixToStrip && name.includes('/')) {
+                prefixToStrip = name.split('/')[0] + '/';
+            }
+
+            const relativePath = name.startsWith(prefixToStrip) ? name.substring(prefixToStrip.length) : name;
+
+            if (isFile && relativePath && !relativePath.endsWith('/')) {
+                entries.push({ path: relativePath, type: 'blob', size });
+            }
+
+            // Skip past header + file content (padded to 512-byte boundary)
+            const dataBlocks = Math.ceil(size / 512);
+            const totalBytes = 512 + dataBlocks * 512;
+            if (buffer.length < totalBytes) {
+                // Need more data, wait for next chunk
+                break;
+            }
+            buffer = buffer.subarray(totalBytes);
+        }
+    });
+
+    gunzip.on('end', () => {
+        resolve({ tree: entries });
+    });
+
+    gunzip.on('error', reject);
+    stream.pipe(gunzip);
+}
+
 /**
  * Get remote plugin list from GitHub repo.
  * Uses Git Tree API to fetch all manifests in a single call (saves API quota).
@@ -31,11 +176,8 @@ async function listRemote() {
     if (cached) return cached;
 
     try {
-        // Single API call: get entire repo tree
-        const tree = await githubApi(`/repos/${REPO}/git/trees/main?recursive=1`);
-        if (!tree || !tree.tree) {
-            throw new Error('Failed to fetch repo tree');
-        }
+        // Single API call (cached 10min): get entire repo tree
+        const tree = await getRepoTree();
 
         // Find all manifest files: <PluginName>/plugin-manifest.json(.block)
         const manifestFiles = tree.tree.filter(f =>
@@ -54,30 +196,27 @@ async function listRemote() {
             }
         }
 
-        // Fetch manifest contents in parallel (blob API, still within tree data)
+        // Fetch manifest contents via raw.githubusercontent.com (no API quota cost)
         const plugins = [];
-        const batchSize = 5;
         const entries = Array.from(pluginManifests.entries());
-
-        for (let i = 0; i < entries.length; i += batchSize) {
-            const batch = entries.slice(i, i + batchSize);
-            const results = await Promise.allSettled(
-                batch.map(async ([pluginName, file]) => {
-                    const blob = await githubApi(`/repos/${REPO}/git/blobs/${file.sha}`);
-                    const manifest = JSON.parse(Buffer.from(blob.content, 'base64').toString('utf-8'));
-                    return {
-                        name: pluginName,
-                        displayName: manifest.displayName || manifest.name || pluginName,
-                        version: manifest.version || '0.0.0',
-                        description: manifest.description || '',
-                        pluginType: manifest.pluginType || 'unknown',
-                        sha: file.sha
-                    };
-                })
-            );
-            for (const r of results) {
-                if (r.status === 'fulfilled') plugins.push(r.value);
-            }
+        const results = await Promise.allSettled(
+            entries.map(async ([pluginName, file]) => {
+                const raw = await fetchRaw(file.path);
+                const manifest = JSON.parse(raw);
+                return {
+                    name: pluginName,
+                    displayName: manifest.displayName || manifest.name || pluginName,
+                    version: manifest.version || '0.0.0',
+                    description: manifest.description || '',
+                    pluginType: manifest.pluginType || 'unknown',
+                    // 插件间依赖声明（详见 docs/PLUGIN_PROTOCOL.md "插件间依赖"）
+                    requires: Array.isArray(manifest.requires) ? manifest.requires : [],
+                    sha: file.sha
+                };
+            })
+        );
+        for (const r of results) {
+            if (r.status === 'fulfilled') plugins.push(r.value);
         }
 
         // Save cache
@@ -183,11 +322,8 @@ async function install(pluginName, options = {}) {
         } catch { /* no existing config */ }
     }
 
-    // Get file tree from GitHub
-    const tree = await githubApi(`/repos/${REPO}/git/trees/main?recursive=1`);
-    if (!tree || !tree.tree) {
-        throw new Error('Failed to fetch repository tree');
-    }
+    // Get file tree from GitHub (uses shared in-memory cache)
+    const tree = await getRepoTree();
 
     // Filter files for this plugin
     const prefix = `${pluginName}/`;
@@ -216,42 +352,30 @@ async function install(pluginName, options = {}) {
         // Create subdirectories
         await fs.mkdir(path.dirname(destPath), { recursive: true });
 
-        // Download file content
-        const blob = await githubApi(`/repos/${REPO}/git/blobs/${file.sha}`);
-        if (blob && blob.content) {
-            const content = Buffer.from(blob.content, blob.encoding || 'base64');
-            await fs.writeFile(destPath, content);
+        // Download file content via raw.githubusercontent.com (no API quota cost)
+        try {
+            const rawContent = await fetchRawBuffer(file.path);
+            await fs.writeFile(destPath, rawContent);
             downloaded++;
 
             // Capture new example config for comparison
             if (relativePath === 'config.env.example') {
-                newExampleConfig = content.toString('utf-8');
+                newExampleConfig = rawContent.toString('utf-8');
             }
+        } catch (dlErr) {
+            console.warn(`[PluginStore] Failed to download ${file.path}: ${dlErr.message}`);
         }
     }
 
     // Auto-merge config: use migrations if available, fallback to fuzzy merge
     let configChanges = [];
     if (isUpdate && existingConfig) {
-        // Try to load config-migrations.json
+        // Try to load config-migrations.json (already downloaded locally)
         let migrationsContent = null;
-        const migrationsFile = pluginFiles.find(f => f.path === `${prefix}config-migrations.json`);
-        if (migrationsFile) {
-            try {
-                const blob = await githubApi(`/repos/${REPO}/git/blobs/${migrationsFile.sha}`);
-                if (blob && blob.content) {
-                    migrationsContent = JSON.parse(Buffer.from(blob.content, blob.encoding || 'base64').toString('utf-8'));
-                }
-            } catch { /* migration file parse failed, fallback */ }
-        }
-
-        // Also try local (just downloaded)
-        if (!migrationsContent) {
-            const localMigPath = path.join(targetDir, 'config-migrations.json');
-            try {
-                migrationsContent = JSON.parse(await fs.readFile(localMigPath, 'utf-8'));
-            } catch { /* no local migrations */ }
-        }
+        const localMigPath = path.join(targetDir, 'config-migrations.json');
+        try {
+            migrationsContent = JSON.parse(await fs.readFile(localMigPath, 'utf-8'));
+        } catch { /* no local migrations */ }
 
         // Get current installed version
         let currentVersion = '0.0.0';
@@ -648,6 +772,57 @@ function collectBody(res) {
     });
 }
 
+/**
+ * Fetch file content from raw.githubusercontent.com (no API quota cost).
+ * Returns UTF-8 string.
+ */
+function fetchRaw(filePath) {
+    return new Promise((resolve, reject) => {
+        const url = `https://raw.githubusercontent.com/${REPO}/main/${filePath}`;
+        https.get(url, { headers: { 'User-Agent': 'VCPtoolbox-Junior-PluginStore' } }, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                https.get(res.headers.location, (res2) => {
+                    collectBody(res2).then(resolve).catch(reject);
+                }).on('error', reject);
+                return;
+            }
+            if (res.statusCode !== 200) {
+                reject(new Error(`Raw fetch ${res.statusCode}: ${filePath}`));
+                return;
+            }
+            collectBody(res).then(resolve).catch(reject);
+        }).on('error', reject);
+    });
+}
+
+/**
+ * Fetch file as Buffer from raw.githubusercontent.com (for binary files).
+ */
+function fetchRawBuffer(filePath) {
+    return new Promise((resolve, reject) => {
+        const url = `https://raw.githubusercontent.com/${REPO}/main/${filePath}`;
+        https.get(url, { headers: { 'User-Agent': 'VCPtoolbox-Junior-PluginStore' } }, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                https.get(res.headers.location, (res2) => {
+                    const chunks = [];
+                    res2.on('data', c => chunks.push(c));
+                    res2.on('end', () => resolve(Buffer.concat(chunks)));
+                    res2.on('error', reject);
+                }).on('error', reject);
+                return;
+            }
+            if (res.statusCode !== 200) {
+                reject(new Error(`Raw fetch ${res.statusCode}: ${filePath}`));
+                return;
+            }
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('error', reject);
+        }).on('error', reject);
+    });
+}
+
 async function readCache(allowStale = false) {
     try {
         const data = JSON.parse(await fs.readFile(STORE_CACHE_FILE, 'utf-8'));
@@ -682,11 +857,51 @@ function compareVersions(a, b) {
     return 0;
 }
 
+/**
+ * 解析某插件的 requires 依赖，区分出已装/待装/仓库缺失三类
+ * @param {string} pluginName 要安装的插件名
+ * @returns {Promise<{pluginName, requires: string[], missing: Array, already: string[], notFound: string[]}>}
+ *   - requires: manifest 声明的完整依赖列表
+ *   - missing:  [{name, displayName}] 仓库中存在但本地未装（前端弹窗列出这部分）
+ *   - already:  [name] 已装的（跳过即可）
+ *   - notFound: [name] 仓库里不存在（阻塞安装并报错）
+ */
+async function resolveDependencies(pluginName) {
+    const [remote, installed] = await Promise.all([listRemote(), listInstalled()]);
+    const target = remote.find(p => p.name === pluginName);
+    if (!target) {
+        const err = new Error(`插件 '${pluginName}' 在商店中不存在`);
+        err.code = 'PLUGIN_NOT_IN_STORE';
+        throw err;
+    }
+    // 老缓存可能无 requires 字段，兜底成空数组
+    const requires = Array.isArray(target.requires) ? target.requires : [];
+    const installedNames = new Set(installed.map(p => p.name));
+    const remoteByName = new Map(remote.map(p => [p.name, p]));
+
+    const missing = [];
+    const already = [];
+    const notFound = [];
+
+    for (const dep of requires) {
+        if (installedNames.has(dep)) {
+            already.push(dep);
+        } else if (remoteByName.has(dep)) {
+            const info = remoteByName.get(dep);
+            missing.push({ name: dep, displayName: info.displayName, version: info.version });
+        } else {
+            notFound.push(dep);
+        }
+    }
+    return { pluginName, requires, missing, already, notFound };
+}
+
 module.exports = {
     listRemote,
     listInstalled,
     checkUpdates,
     install,
     uninstall,
-    update
+    update,
+    resolveDependencies
 };

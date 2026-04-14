@@ -34,6 +34,18 @@ module.exports = function(options) {
         }
     });
 
+    // GET /plugin-store/resolve-deps/:name - 解析某插件的插件间依赖，返回 missing/already/notFound
+    router.get('/plugin-store/resolve-deps/:name', async (req, res) => {
+        try {
+            const { name } = req.params;
+            const result = await store.resolveDependencies(name);
+            res.json({ status: 'success', ...result });
+        } catch (error) {
+            const code = error.code === 'PLUGIN_NOT_IN_STORE' ? 404 : 500;
+            res.status(code).json({ status: 'error', code: error.code || null, message: error.message });
+        }
+    });
+
     // POST /plugin-store/install/:name - Install a plugin
     router.post('/plugin-store/install/:name', async (req, res) => {
         try {

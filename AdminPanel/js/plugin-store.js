@@ -124,38 +124,114 @@ function renderPluginCard(plugin) {
     `;
 }
 
+/**
+ * 调用商店的 install 接口（单次）
+ */
+async function _doInstall(name) {
+    return apiFetch(`${API}/plugin-store/install/${name}`, {
+        method: 'POST',
+        body: JSON.stringify({ force: true })
+    });
+}
+
+/**
+ * 装完一个插件后，更新卡片 UI 为"已安装"态
+ */
+function _markCardInstalled(name) {
+    const card = document.querySelector(`.plugin-card[data-name="${name}"]`);
+    if (!card) return;
+    card.classList.remove('available');
+    card.classList.add('installed');
+    const status = card.querySelector('.card-status');
+    if (status) { status.textContent = '已安装'; status.className = 'card-status installed'; }
+    const btn = card.querySelector('button');
+    if (btn) {
+        btn.textContent = '已安装';
+        btn.className = 'btn-uninstall';
+        btn.onclick = () => window._pluginStoreUninstall(name, btn);
+        btn.disabled = false;
+    }
+}
+
 async function installPlugin(name, btn) {
     btn.disabled = true;
-    btn.textContent = '安装中...';
+    btn.textContent = '检查依赖...';
 
+    // 先解析插件间依赖（requires 协议），若有缺失且用户确认 → 连锁安装
+    let deps = null;
     try {
-        const result = await apiFetch(`${API}/plugin-store/install/${name}`, {
-            method: 'POST',
-            body: JSON.stringify({})
-        });
+        deps = await apiFetch(`${API}/plugin-store/resolve-deps/${name}`, { suppressErrorToast: true });
+    } catch (e) {
+        // 404 = 插件不在商店，其他 = 网络/解析失败
+        showMessage(`无法解析依赖: ${e.message}`, 'error');
+        btn.textContent = '安装';
+        btn.disabled = false;
+        return;
+    }
 
+    // 仓库里找不到某个依赖 → 阻塞安装
+    if (deps.notFound && deps.notFound.length > 0) {
+        showMessage(`安装失败：依赖插件 [${deps.notFound.join(', ')}] 在商店仓库中不存在，请联系仓库维护者补齐。`, 'error');
+        btn.textContent = '安装';
+        btn.disabled = false;
+        return;
+    }
+
+    // 有未安装的依赖 → 弹确认框
+    if (deps.missing && deps.missing.length > 0) {
+        const depLines = deps.missing.map(d => `  · ${d.displayName} (${d.name}) v${d.version}`).join('\n');
+        const alreadyHint = deps.already.length > 0 ? `\n\n已安装的依赖（将跳过）：\n  · ${deps.already.join(', ')}` : '';
+        const ok = confirm(
+            `插件 "${name}" 依赖以下插件，是否一同安装？\n\n${depLines}${alreadyHint}\n\n点"确定"将按依赖→主插件顺序串行安装。`
+        );
+        if (!ok) {
+            showMessage(`已取消安装 ${name}`, 'info');
+            btn.textContent = '安装';
+            btn.disabled = false;
+            return;
+        }
+        // 先装依赖（按 requires 声明的顺序）
+        for (const dep of deps.missing) {
+            btn.textContent = `装依赖 ${dep.name}...`;
+            try {
+                const r = await _doInstall(dep.name);
+                if (!r.success) {
+                    showMessage(`依赖 ${dep.name} 安装失败: ${r.message}`, 'error');
+                    btn.textContent = '安装';
+                    btn.disabled = false;
+                    return;
+                }
+                _markCardInstalled(dep.name);
+            } catch (err) {
+                showMessage(`依赖 ${dep.name} 安装异常: ${err.message}`, 'error');
+                btn.textContent = '安装';
+                btn.disabled = false;
+                return;
+            }
+        }
+    }
+
+    // 装主插件
+    btn.textContent = '安装中...';
+    try {
+        const result = await _doInstall(name);
         if (result.success) {
             _storeCache = null; // Invalidate cache
-            showMessage(`插件 ${name} 安装成功！重启服务后生效。`, 'success');
-            btn.textContent = '已安装';
-            btn.className = 'btn-uninstall';
-            btn.onclick = () => window._pluginStoreUninstall(name, btn);
-            const card = btn.closest('.plugin-card');
-            if (card) {
-                card.classList.remove('available');
-                card.classList.add('installed');
-                card.querySelector('.card-status').textContent = '已安装';
-                card.querySelector('.card-status').className = 'card-status installed';
-            }
+            const depSummary = deps.missing && deps.missing.length > 0
+                ? `（同时装了依赖: ${deps.missing.map(d => d.name).join(', ')}）`
+                : '';
+            showMessage(`插件 ${name} 安装成功！${depSummary}重启服务后生效。`, 'success');
+            _markCardInstalled(name);
         } else {
             showMessage(result.message, 'error');
             btn.textContent = '安装';
+            btn.disabled = false;
         }
     } catch (error) {
         showMessage(`安装失败: ${error.message}`, 'error');
         btn.textContent = '安装';
+        btn.disabled = false;
     }
-    btn.disabled = false;
 }
 
 async function uninstallPlugin(name, btn) {
