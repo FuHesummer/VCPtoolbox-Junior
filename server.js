@@ -1274,6 +1274,8 @@ async function startServer() {
     console.log('正在初始化Agent管理器...');
     agentManager.setAgentDir(AGENT_DIR);
     await agentManager.initialize(DEBUG_MODE);
+    // Ensure Agent diary/knowledge directories exist on disk
+    try { require('./modules/notebookResolver').ensureDirectories(); } catch {}
     console.log('Agent管理器初始化完成。');
 
     console.log('正在初始化TVS管理器...');

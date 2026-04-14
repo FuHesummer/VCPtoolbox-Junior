@@ -217,4 +217,5 @@ Plugin/XiaohongshuFetch/config.env
 
 # Runtime generated files
 Plugin/.store-cache.json
+Plugin/.tree-cache.json
 Plugin/*/code.bin
