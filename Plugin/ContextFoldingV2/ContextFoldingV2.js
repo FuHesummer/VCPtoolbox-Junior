@@ -90,11 +90,12 @@ class ContextFoldingV2 {
     }
 
     /**
-     * 从 rag_params.json 加载热调控参数
+     * 从 modules/rag_params.json 加载热调控参数
+     * [Junior 协议] 权威路径是 modules/rag_params.json，与 RAGDiaryPlugin / admin /rag-params API 一致
      */
     async _loadHotParams() {
         const projectBasePath = process.env.PROJECT_BASE_PATH || path.join(__dirname, '../../');
-        const paramsPath = path.join(projectBasePath, 'rag_params.json');
+        const paramsPath = path.join(projectBasePath, 'modules', 'rag_params.json');
         try {
             const data = await fs.readFile(paramsPath, 'utf-8');
             const allParams = JSON.parse(data);
@@ -108,11 +109,11 @@ class ContextFoldingV2 {
     }
 
     /**
-     * 监听 rag_params.json 变更
+     * 监听 modules/rag_params.json 变更
      */
     _startHotParamsWatcher() {
         const projectBasePath = process.env.PROJECT_BASE_PATH || path.join(__dirname, '../../');
-        const paramsPath = path.join(projectBasePath, 'rag_params.json');
+        const paramsPath = path.join(projectBasePath, 'modules', 'rag_params.json');
         if (this._ragParamsWatcher) return;
 
         this._ragParamsWatcher = chokidar.watch(paramsPath, { ignoreInitial: true });

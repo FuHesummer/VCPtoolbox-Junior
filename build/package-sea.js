@@ -64,7 +64,6 @@ const USER_FILES = [
     'config.env.example',
     'maintain.js',
     'agent_map.json',
-    'rag_params.json',
     'LICENSE',
     'README.md',
 ];
