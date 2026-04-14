@@ -60,6 +60,27 @@ module.exports = function(options) {
             && Object.keys(manifest.configSchema).length > 0;
     }
 
+    // Helper: 读取插件 config.env，不存在时 fallback 到 config.env.example 作为模板
+    // 返回 { content, fromExample } — content 为 null 表示都不存在
+    async function _readConfigEnv(pluginPath, pluginName) {
+        try {
+            const content = await fs.readFile(path.join(pluginPath, 'config.env'), 'utf-8');
+            return { content, fromExample: false };
+        } catch (envError) {
+            if (envError.code !== 'ENOENT') {
+                console.warn(`[AdminPanelRoutes] Error reading config.env for ${pluginName}:`, envError);
+                return { content: null, fromExample: false };
+            }
+        }
+        // fallback to config.env.example
+        try {
+            const content = await fs.readFile(path.join(pluginPath, 'config.env.example'), 'utf-8');
+            return { content, fromExample: true };
+        } catch (_) {
+            return { content: null, fromExample: false };
+        }
+    }
+
     // GET plugin list
     router.get('/plugins', async (req, res) => {
         try {
@@ -69,27 +90,27 @@ module.exports = function(options) {
             const loadedPlugins = Array.from(pluginManager.plugins.values());
             for (const p of loadedPlugins) {
                 let configEnvContent = null;
+                let configEnvFromExample = false;
                 let hasAdminPage = false;
+                let hasConfigSchema = false;
                 if (!p.isDistributed && p.basePath) {
-                    try {
-                        const pluginConfigPath = path.join(p.basePath, 'config.env');
-                        configEnvContent = await fs.readFile(pluginConfigPath, 'utf-8');
-                    } catch (envError) {
-                        if (envError.code !== 'ENOENT') {
-                            console.warn(`[AdminPanelRoutes] Error reading config.env for ${p.name}:`, envError);
-                        }
-                    }
-                    // Check for custom admin page or configSchema (generic config form)
-                    hasAdminPage = await _hasCustomAdminPage(p.basePath) || _hasConfigSchema(p);
+                    const envRead = await _readConfigEnv(p.basePath, p.name);
+                    configEnvContent = envRead.content;
+                    configEnvFromExample = envRead.fromExample;
+                    // hasAdminPage 仅指真实的自定义 admin/index.html 页
+                    hasAdminPage = await _hasCustomAdminPage(p.basePath);
+                    hasConfigSchema = _hasConfigSchema(p);
                 }
                 pluginDataMap.set(p.name, {
                     name: p.name,
                     manifest: p,
                     enabled: true,
                     configEnvContent: configEnvContent,
+                    configEnvFromExample,
                     isDistributed: p.isDistributed || false,
                     serverId: p.serverId || null,
-                    hasAdminPage
+                    hasAdminPage,
+                    hasConfigSchema
                 });
             }
 
@@ -105,27 +126,23 @@ module.exports = function(options) {
                         const manifest = JSON.parse(manifestContent);
 
                         if (!pluginDataMap.has(manifest.name)) {
-                            let configEnvContent = null;
-                            let hasAdminPage = false;
-                            try {
-                                const pluginConfigPath = path.join(pluginPath, 'config.env');
-                                configEnvContent = await fs.readFile(pluginConfigPath, 'utf-8');
-                            } catch (envError) {
-                                if (envError.code !== 'ENOENT') {
-                                    console.warn(`[AdminPanelRoutes] Error reading config.env for disabled plugin ${manifest.name}:`, envError);
-                                }
-                            }
-                            // Check for custom admin page
-                            hasAdminPage = await _hasCustomAdminPage(pluginPath) || _hasConfigSchema(manifest);
+                            const envRead = await _readConfigEnv(pluginPath, manifest.name);
+                            const configEnvContent = envRead.content;
+                            const configEnvFromExample = envRead.fromExample;
+                            // hasAdminPage 仅指真实的自定义 admin/index.html 页
+                            const hasAdminPage = await _hasCustomAdminPage(pluginPath);
+                            const hasConfigSchema = _hasConfigSchema(manifest);
                             manifest.basePath = pluginPath;
                             pluginDataMap.set(manifest.name, {
                                 name: manifest.name,
                                 manifest: manifest,
                                 enabled: false,
                                 configEnvContent: configEnvContent,
+                                configEnvFromExample,
                                 isDistributed: false,
                                 serverId: null,
-                                hasAdminPage
+                                hasAdminPage,
+                                hasConfigSchema
                             });
                         }
                     } catch (error) {

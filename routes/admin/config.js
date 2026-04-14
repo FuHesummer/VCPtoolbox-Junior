@@ -37,6 +37,54 @@ module.exports = function(options) {
         }
     });
 
+    // --- 待审批任务列表（实时） ---
+    // 基于 pluginManager.pendingApprovals 内存 Map，进程重启后清空
+    router.get('/tool-approval-pending', (req, res) => {
+        try {
+            const pending = [];
+            const map = pluginManager && pluginManager.pendingApprovals;
+            if (map && typeof map.entries === 'function') {
+                for (const [id, data] of map.entries()) {
+                    pending.push({
+                        requestId: id,
+                        toolName: data.toolName || '?',
+                        args: data.args || {},
+                        maid: data.maid || null,
+                        timestamp: data.timestamp || null,
+                        createdAt: data.createdAt || null
+                    });
+                }
+            }
+            // 最新的在前
+            pending.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            res.json({ pending });
+        } catch (error) {
+            console.error('[AdminPanelRoutes] Error listing pending approvals:', error);
+            res.status(500).json({ error: 'Failed to list pending approvals', details: error.message });
+        }
+    });
+
+    // 批准/拒绝待审批任务
+    router.post('/tool-approval-pending/:requestId', (req, res) => {
+        try {
+            const { requestId } = req.params;
+            const { approved } = req.body || {};
+            if (typeof approved !== 'boolean') {
+                return res.status(400).json({ error: 'Expected { approved: boolean }' });
+            }
+            const ok = pluginManager && typeof pluginManager.handleApprovalResponse === 'function'
+                ? pluginManager.handleApprovalResponse(requestId, approved)
+                : false;
+            if (!ok) {
+                return res.status(404).json({ success: false, error: 'Approval request not found or already resolved' });
+            }
+            res.json({ success: true, approved });
+        } catch (error) {
+            console.error('[AdminPanelRoutes] Error responding to approval:', error);
+            res.status(500).json({ error: 'Failed to respond to approval', details: error.message });
+        }
+    });
+
     // --- Main Config API ---
     router.get('/config/main', async (req, res) => {
         try {

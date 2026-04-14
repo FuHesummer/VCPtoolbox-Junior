@@ -74,11 +74,24 @@ module.exports = function(options) {
         } catch (error) { res.status(500).json({ error: 'Failed' }); }
     });
 
+    // 扫描思维簇目录（以"簇"结尾的子目录）
+    // Junior: 思维簇统一放在 thinking/ 目录；同时兼容 dailyNoteRootPath (= knowledge/) 以防用户放在老位置
     router.get('/available-clusters', async (req, res) => {
-        try {
-            const entries = await fs.readdir(dailyNoteRootPath, { withFileTypes: true });
-            res.json({ clusters: entries.filter(e => e.isDirectory() && e.name.endsWith('簇')).map(e => e.name) });
-        } catch (error) { res.json({ clusters: [] }); }
+        const THINKING_ROOT = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'thinking');
+        const names = new Set();
+        const scan = async (root) => {
+            try {
+                const entries = await fs.readdir(root, { withFileTypes: true });
+                for (const e of entries) {
+                    if (e.isDirectory() && e.name.endsWith('簇')) names.add(e.name);
+                }
+            } catch (_) { /* 目录不存在就跳过 */ }
+        };
+        await scan(THINKING_ROOT);
+        if (dailyNoteRootPath && dailyNoteRootPath !== THINKING_ROOT) {
+            await scan(dailyNoteRootPath);
+        }
+        res.json({ clusters: Array.from(names).sort() });
     });
 
     router.get('/vectordb-status', (req, res) => {

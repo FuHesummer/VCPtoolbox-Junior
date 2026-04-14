@@ -21,8 +21,10 @@ export interface DashboardCardDef {
   id?: string
   title?: string
   icon?: string
-  src?: string            // iframe src（相对于插件 admin-assets）
-  inline?: string         // 内联 HTML（与 src 二选一）
+  // 官方协议字段（与上游 AdminPanel/js/dashboard.js 一致）
+  source?: string         // iframe/HTML 资源路径（相对于插件 admin-assets）
+  inline?: string         // 内联 HTML（与 source 二选一）
+  width?: string          // "1x" | "2x"
   height?: number | string
   [key: string]: unknown
 }
@@ -40,7 +42,9 @@ export interface PluginInfo {
   enabled: boolean
   manifest: PluginManifest
   configEnvContent?: string
-  hasAdminPage?: boolean
+  configEnvFromExample?: boolean   // true 表示 content 来自 config.env.example 模板
+  hasAdminPage?: boolean           // 插件提供自定义 admin/index.html 页
+  hasConfigSchema?: boolean        // 插件 manifest 声明了 configSchema
   [key: string]: unknown
 }
 

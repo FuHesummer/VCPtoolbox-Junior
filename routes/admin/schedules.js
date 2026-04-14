@@ -5,6 +5,12 @@ const path = require('path');
 module.exports = function(options) {
     const router = express.Router();
     const SCHEDULE_FILE = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'Plugin', 'ScheduleManager', 'schedules.json');
+    const SCHEDULE_DIR = path.dirname(SCHEDULE_FILE);
+
+    // 确保 ScheduleManager 目录存在（插件未装时也不让创建日程失败）
+    async function ensureDir() {
+        try { await fs.mkdir(SCHEDULE_DIR, { recursive: true }); } catch (_) { /* 已存在 */ }
+    }
 
     router.get('/schedules', async (req, res) => {
         try {
@@ -33,6 +39,7 @@ module.exports = function(options) {
             } catch (e) { if (e.code !== 'ENOENT') throw e; }
             const newSchedule = { id: Date.now().toString(), time, content };
             schedules.push(newSchedule);
+            await ensureDir();
             await fs.writeFile(SCHEDULE_FILE, JSON.stringify(schedules, null, 2), 'utf-8');
             res.json({ status: 'success', schedule: newSchedule });
         } catch (error) {
@@ -49,6 +56,7 @@ module.exports = function(options) {
                 schedules = JSON.parse(fileContent);
             } catch (e) { if (e.code !== 'ENOENT') throw e; }
             schedules = schedules.filter(s => s.id !== id);
+            await ensureDir();
             await fs.writeFile(SCHEDULE_FILE, JSON.stringify(schedules, null, 2), 'utf-8');
             res.json({ status: 'success' });
         } catch (error) {

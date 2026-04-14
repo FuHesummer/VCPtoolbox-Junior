@@ -65,9 +65,11 @@ defineEmits<{
   align-items: baseline;
   gap: 8px;
   margin-bottom: 6px;
+  // 给右上角 toggle（36px + 右边距）留空间，避免遮挡版本号
+  padding-right: 48px;
 
   .name { font-size: 14px; color: var(--primary-text); }
-  .version { font-size: 11px; color: var(--secondary-text); }
+  .version { font-size: 11px; color: var(--secondary-text); flex-shrink: 0; }
 }
 
 .desc {

@@ -1,6 +1,6 @@
 {
   "DailyHot": {
     "dashboardCards": true,
-    "adminNav": false
+    "adminNav": true
   }
 }

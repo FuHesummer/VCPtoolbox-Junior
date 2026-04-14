@@ -85,12 +85,13 @@
         class="card plugin-dashboard-card"
         :class="{ wide: card.width === '2x' }"
         :data-plugin-name="card.pluginName"
+        :ref="(el) => registerCardRef(card.id, el as HTMLElement | null)"
       >
         <h3>
           <span v-if="card.icon" class="material-symbols-outlined">{{ card.icon }}</span>
           {{ card.title || card.id }}
         </h3>
-        <div class="plugin-card-body" v-html="card.html" />
+        <div class="plugin-card-body" />
         <div class="plugin-card-badge">{{ card.displayName }}</div>
       </div>
     </div>
@@ -98,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, reactive } from 'vue'
+import { onMounted, onBeforeUnmount, ref, reactive, nextTick } from 'vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { getSystemResources, getPM2Processes } from '@/api/system'
@@ -185,7 +186,7 @@ async function loadPluginCards() {
       const pluginPref = (prefs as Record<string, { dashboardCards?: boolean }>)[p.manifest.name]
       if (pluginPref?.dashboardCards === false) continue
       for (const def of cards) {
-        if (!def.src && !def.inline) continue
+        if (!def.source && !def.inline) continue
         tasks.push(renderCard(p, def))
       }
     }
@@ -193,9 +194,45 @@ async function loadPluginCards() {
     pluginCards.value = results
       .filter((r): r is PromiseFulfilledResult<PluginCardRendered | null> => r.status === 'fulfilled' && r.value !== null)
       .map((r) => r.value as PluginCardRendered)
+    // 等 DOM 渲染完后，把 HTML 片段手动塞进去 + 重建 <script> 让其执行
+    // Vue 的 v-html 出于安全考虑不会执行 <script>，所以必须手动处理
+    await nextTick()
+    for (const card of pluginCards.value) {
+      injectCardContent(card)
+    }
   } catch (e) {
     console.warn('[Dashboard] load plugin cards failed:', e)
   }
+}
+
+// 卡片容器 DOM 引用表，供 ref 回调注册
+const cardRefs = new Map<string, HTMLElement>()
+function registerCardRef(id: string, el: HTMLElement | null) {
+  if (el) cardRefs.set(id, el)
+  else cardRefs.delete(id)
+}
+
+// 注入卡片 HTML 片段并重建 <script> 让其执行
+function injectCardContent(card: PluginCardRendered) {
+  const root = cardRefs.get(card.id)
+  if (!root) return
+  const body = root.querySelector<HTMLElement>('.plugin-card-body')
+  if (!body) return
+  body.innerHTML = card.html
+  // 重建 script 让浏览器执行
+  body.querySelectorAll('script').forEach((oldScript) => {
+    const s = document.createElement('script')
+    // 复制属性
+    for (const attr of Array.from(oldScript.attributes)) {
+      s.setAttribute(attr.name, attr.value)
+    }
+    if (oldScript.src) {
+      s.src = oldScript.src
+    } else {
+      s.textContent = oldScript.textContent
+    }
+    oldScript.replaceWith(s)
+  })
 }
 
 async function renderCard(p: PluginInfo, def: DashboardCardDef): Promise<PluginCardRendered | null> {
@@ -203,9 +240,9 @@ async function renderCard(p: PluginInfo, def: DashboardCardDef): Promise<PluginC
     let html = ''
     if (typeof def.inline === 'string') {
       html = def.inline
-    } else if (def.src) {
+    } else if (def.source) {
       const resp = await fetch(
-        `/admin_api/plugins/${encodeURIComponent(p.manifest.name)}/admin-assets/${encodeURIComponent(def.src)}`,
+        `/admin_api/plugins/${encodeURIComponent(p.manifest.name)}/admin-assets/${encodeURIComponent(def.source)}`,
         { credentials: 'same-origin' },
       )
       if (!resp.ok) return null

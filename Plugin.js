@@ -805,7 +805,15 @@ class PluginManager extends EventEmitter {
                     }
                 }, timeoutDuration);
 
-                this.pendingApprovals.set(requestId, { resolve, reject, timeoutId });
+                this.pendingApprovals.set(requestId, {
+                    resolve, reject, timeoutId,
+                    // AdminPanel 待审批任务列表用的请求详情
+                    toolName,
+                    args: pluginSpecificArgs,
+                    maid: maidNameFromArgs,
+                    timestamp: _getFormattedLocalTimestamp(),
+                    createdAt: Date.now()
+                });
             });
 
             // 发送审核请求到管理面板

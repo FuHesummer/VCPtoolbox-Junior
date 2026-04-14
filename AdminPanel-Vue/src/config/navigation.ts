@@ -54,7 +54,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: '预处理器排序', route: 'preprocessor-order', icon: 'swap_vert' },
       { title: '调用审核', route: 'tool-approval', icon: 'verified' },
       { title: '占位符查看', route: 'placeholders', icon: 'variables' },
-      { title: '日程管理', route: 'schedules', icon: 'calendar_month' },
     ],
   },
   {

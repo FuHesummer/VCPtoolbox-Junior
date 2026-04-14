@@ -40,7 +40,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'preprocessor-order', name: 'preprocessor-order', component: () => import('@/views/tools/PreprocessorOrderView.vue'), meta: { group: 'tools', title: '预处理器排序' } },
       { path: 'tool-approval', name: 'tool-approval', component: () => import('@/views/tools/ToolApprovalView.vue'), meta: { group: 'tools', title: '调用审核' } },
       { path: 'placeholders', name: 'placeholders', component: () => import('@/views/tools/PlaceholderViewerView.vue'), meta: { group: 'tools', title: '占位符查看' } },
-      { path: 'schedules', name: 'schedules', component: () => import('@/views/tools/ScheduleManagerView.vue'), meta: { group: 'tools', title: '日程管理' } },
 
       // 插件
       { path: 'plugin-store', name: 'plugin-store', component: () => import('@/views/plugins/PluginStoreView.vue'), meta: { group: 'plugins', title: '插件商店' } },

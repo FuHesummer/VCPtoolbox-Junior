@@ -23,15 +23,55 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { NAV_GROUPS, type NavGroup, type NavItem } from '@/config/navigation'
+import { listPlugins, getPluginUiPrefs } from '@/api/plugins'
+import type { PluginInfo } from '@/api/types'
 
 const keyword = ref('')
+const dynamicPluginItems = ref<NavItem[]>([])
+
+// 读取已启用插件的 adminNav 声明，根据 plugin-ui-prefs 过滤后注入到"插件"分组
+async function loadPluginNav() {
+  try {
+    const [plugins, prefs] = await Promise.all([
+      listPlugins({ showLoader: false, suppressErrorToast: true }).catch(() => [] as PluginInfo[]),
+      getPluginUiPrefs({ showLoader: false, suppressErrorToast: true }).catch(() => ({} as Record<string, { adminNav?: boolean }>)),
+    ])
+    const list = (plugins as PluginInfo[]) ?? []
+    const prefsMap = prefs as Record<string, { adminNav?: boolean }>
+    const items: NavItem[] = []
+    for (const p of list) {
+      if (!p.enabled) continue
+      const nav = p.manifest.adminNav
+      if (!nav) continue
+      if (prefsMap[p.manifest.name]?.adminNav === false) continue
+      items.push({
+        title: nav.title || p.manifest.displayName || p.manifest.name,
+        route: 'plugin-nav',
+        icon: nav.icon || 'extension',
+        params: { name: p.manifest.name },
+      })
+    }
+    dynamicPluginItems.value = items
+  } catch (_) { /* 增强特性，静默失败 */ }
+}
+
+// 合并静态 NAV_GROUPS 与插件动态项（plugins 组追加）
+const mergedGroups = computed<NavGroup[]>(() => {
+  return NAV_GROUPS.map((g) => {
+    if (g.key === 'plugins' && dynamicPluginItems.value.length) {
+      return { ...g, items: [...g.items, ...dynamicPluginItems.value] }
+    }
+    return g
+  })
+})
 
 const filteredGroups = computed<NavGroup[]>(() => {
-  if (!keyword.value.trim()) return NAV_GROUPS
+  if (!keyword.value.trim()) return mergedGroups.value
   const kw = keyword.value.toLowerCase()
-  return NAV_GROUPS
+  return mergedGroups.value
     .map((g) => ({ ...g, items: g.items.filter((i) => i.title.toLowerCase().includes(kw)) }))
     .filter((g) => g.items.length > 0)
 })
@@ -39,6 +79,16 @@ const filteredGroups = computed<NavGroup[]>(() => {
 function resolveTo(item: NavItem) {
   return { name: item.route, params: item.params }
 }
+
+// 路由切换回插件管理页时，刷新动态导航（toggle 开关后及时生效）
+const router = useRouter()
+router.afterEach((to, from) => {
+  if (from.name === 'plugin-manager' && to.name !== 'plugin-manager') {
+    loadPluginNav()
+  }
+})
+
+onMounted(loadPluginNav)
 </script>
 
 <style lang="scss" scoped>

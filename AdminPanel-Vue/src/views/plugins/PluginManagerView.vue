@@ -37,8 +37,40 @@
         <Tabs :tabs="editorTabs" v-model:active="activeTab">
           <template #default="{ active: tab }">
             <div v-if="tab === 'config'">
-              <p class="hint">编辑该插件的 config.env（保存后会立即覆盖运行时配置）</p>
-              <CodeEditor v-model="editingContent" :rows="16" placeholder="KEY=VALUE" />
+              <div class="config-head">
+                <p class="hint">编辑该插件的 config.env（保存后会立即覆盖运行时配置）</p>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  :class="{ 'btn-danger': pluginConfigRawMode }"
+                  @click="togglePluginConfigRawMode"
+                >
+                  <span class="material-symbols-outlined">{{ pluginConfigRawMode ? 'view_module' : 'data_object' }}</span>
+                  {{ pluginConfigRawMode ? '表单模式' : '原文模式' }}
+                </button>
+              </div>
+
+              <div v-if="active?.configEnvFromExample" class="example-banner">
+                <span class="material-symbols-outlined">info</span>
+                当前内容来自 <code>config.env.example</code> 模板 — 保存后会在插件目录创建 <code>config.env</code>
+              </div>
+
+              <EmptyState
+                v-if="!pluginConfigRawMode && pluginConfigEntries.length === 0"
+                icon="settings_applications"
+                message="此插件没有 config.env 也没有 config.env.example，配置可能统一在根目录 config.env — 可切到原文模式手动新增"
+              />
+
+              <div v-else-if="!pluginConfigRawMode" class="plugin-fields">
+                <EnvField
+                  v-for="x in pluginConfigEntries"
+                  :key="x.idx + '-' + x.entry.key"
+                  :entry="x.entry"
+                  @update:value="(v) => updatePluginConfigValue(x.idx, v)"
+                />
+              </div>
+
+              <CodeEditor v-else v-model="editingContent" :rows="16" placeholder="KEY=VALUE" />
             </div>
             <div v-else-if="tab === 'description'">
               <p class="hint">描述会展示在插件列表和系统提示里</p>
@@ -63,7 +95,8 @@
                 <dt>显示名</dt><dd>{{ active.manifest.displayName || '—' }}</dd>
                 <dt>版本</dt><dd>{{ active.manifest.version || '—' }}</dd>
                 <dt>类型</dt><dd>{{ active.manifest.pluginType || '—' }}</dd>
-                <dt>有管理页</dt><dd>{{ active.hasAdminPage ? '是' : '否' }}</dd>
+                <dt>有管理页</dt><dd>{{ active.hasAdminPage ? '是（自定义 admin/index.html）' : '否' }}</dd>
+                <dt>configSchema</dt><dd>{{ active.hasConfigSchema ? '已声明' : '—' }}</dd>
                 <dt>requires</dt><dd>{{ active.manifest.requires?.join(', ') || '—' }}</dd>
               </dl>
             </div>
@@ -85,11 +118,13 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import Tabs from '@/components/common/Tabs.vue'
 import CodeEditor from '@/components/common/CodeEditor.vue'
+import EnvField from '@/components/config/EnvField.vue'
 import PluginCard from '@/components/plugins/PluginCard.vue'
 import ServiceWarn from '@/components/common/ServiceWarn.vue'
 import { listPlugins, togglePlugin, savePluginConfig, updatePluginDescription, getPluginUiPrefs, savePluginUiPrefs } from '@/api/plugins'
 import type { PluginInfo, PluginUiPrefs } from '@/api/types'
 import { useUiStore } from '@/stores/ui'
+import { parseEnv, buildEnv, type EnvItem, type EnvEntry } from '@/utils/envParser'
 
 const ui = useUiStore()
 const plugins = ref<PluginInfo[]>([])
@@ -103,6 +138,38 @@ const activeTab = ref('config')
 const editingContent = ref('')
 const editingDescription = ref('')
 const editingUiPrefs = reactive<{ dashboardCards: boolean; adminNav: boolean }>({ dashboardCards: true, adminNav: true })
+
+// 插件 config 表单模式 / 原文模式
+const pluginConfigRawMode = ref(false)
+const pluginConfigItems = ref<EnvItem[]>([])
+
+const pluginConfigEntries = computed(() => {
+  const result: Array<{ entry: EnvEntry; idx: number }> = []
+  pluginConfigItems.value.forEach((it, idx) => {
+    if (it.kind === 'entry') result.push({ entry: it, idx })
+  })
+  return result
+})
+
+function updatePluginConfigValue(idx: number, v: string) {
+  const it = pluginConfigItems.value[idx]
+  if (it && it.kind === 'entry') {
+    it.value = v
+    editingContent.value = buildEnv(pluginConfigItems.value)
+  }
+}
+
+function togglePluginConfigRawMode() {
+  if (pluginConfigRawMode.value) {
+    // 原文 → 表单：重新解析原文
+    pluginConfigItems.value = parseEnv(editingContent.value)
+    pluginConfigRawMode.value = false
+  } else {
+    // 表单 → 原文：用当前 items 重建原文
+    editingContent.value = buildEnv(pluginConfigItems.value)
+    pluginConfigRawMode.value = true
+  }
+}
 
 const editorTabs = [
   { key: 'config', label: '配置' },
@@ -162,6 +229,8 @@ function openPlugin(p: PluginInfo) {
   active.value = p
   editingContent.value = p.configEnvContent || ''
   editingDescription.value = p.manifest.description || ''
+  pluginConfigItems.value = parseEnv(editingContent.value)
+  pluginConfigRawMode.value = false
   const prefs = uiPrefs.value[p.manifest.name] || {}
   editingUiPrefs.dashboardCards = prefs.dashboardCards !== false
   editingUiPrefs.adminNav = prefs.adminNav !== false
@@ -240,6 +309,55 @@ onMounted(reload)
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--secondary-text);
+}
+
+.config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+
+  .hint { margin: 0; flex: 1; }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+
+    .material-symbols-outlined { font-size: 15px; }
+  }
+}
+
+.plugin-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.example-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(212, 116, 142, 0.08);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--highlight-text);
+
+  .material-symbols-outlined { font-size: 16px; }
+
+  code {
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    background: var(--accent-bg);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+  }
 }
 
 .desc-input {
