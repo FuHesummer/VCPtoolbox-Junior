@@ -193,6 +193,7 @@ Plugin/VCPLog/log/VCPlog.txt
 Plugin/WeatherReporter/weather_cache.json
 Plugin/WeatherReporter/weather_cache.txt
 Plugin/WeatherReporter/city_cache.txt
+Plugin/WeatherReporter/admin/weather-data.json
 
 # ===== 图片 / 媒体 =====
 # 忽略通用表情包目录下的所有内容...
@@ -226,6 +227,18 @@ Plugin/*/code.bin
 
 # AdminPanel 用户布局（个性化数据，不随仓库分发）
 /dashboard-layout.json
+
+# AdminPanel-Vue 是指向独立仓库的 symlink（D:\VCP\后端\VCPtoolbox-Junior-Panel），不入本体 git
+/AdminPanel-Vue
+# data/panel-registry.json 是默认注册表，保留入库；运行时覆盖不入库
+!/data/panel-registry.json
+
+# 本地开发专用脚本（AdminPanel 源码同步到独立发布仓库用，不随主仓库分发）
+scripts/sync-panel.js
+
+# 运维中心运行时数据
+/data/maintenance-history.json
+/data/maintenance-logs/
 
 # 插件 npm install 产物（插件仓库协议不要求 commit lock）
 Plugin/*/package-lock.json

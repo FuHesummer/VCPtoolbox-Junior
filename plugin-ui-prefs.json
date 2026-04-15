@@ -6,5 +6,9 @@
   "ContextFoldingV2": {
     "dashboardCards": true,
     "adminNav": true
+  },
+  "WeatherReporter": {
+    "dashboardCards": true,
+    "adminNav": false
   }
 }

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "VCPtoolbox-Junior 管理面板注册表 — 列出官方认证 + 社区面板。面板通过 ADMIN_PANEL_SOURCE 切换，详见 config.env.example。",
+  "panels": [
+    {
+      "id": "official",
+      "name": "VCPtoolbox-Junior Panel (官方)",
+      "description": "Vue 3 + TypeScript 官方重构版，粉色玻璃拟态主题，覆盖全部管理功能",
+      "repo": "https://github.com/lioensky/VCPtoolbox-Junior-Panel",
+      "release": "https://github.com/lioensky/VCPtoolbox-Junior-Panel/releases/latest",
+      "maintainer": "VCPtoolbox-Junior Core Team",
+      "techStack": ["Vue 3", "TypeScript", "Vite"],
+      "icon": "dashboard",
+      "featured": true,
+      "localPathHint": "../VCPtoolbox-Junior-Panel/dist"
+    }
+  ]
+}

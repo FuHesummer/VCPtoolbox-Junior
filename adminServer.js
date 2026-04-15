@@ -7,6 +7,7 @@ dotenv.config({ path: 'config.env' });
 
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const http = require('http');
 const basicAuth = require('basic-auth');
 const cors = require('cors');
@@ -41,14 +42,19 @@ app.use(express.text({ limit: '300mb', type: 'text/plain' }));
 // Admin Authentication Middleware (从 server.js 复制并精简)
 // ============================================================
 const adminAuth = (req, res, next) => {
-    // 登录页和静态资源白名单
+    // 登录页 + 静态资源白名单（精确路径）
     const publicPaths = [
-        '/AdminPanel/login.html',
+        '/AdminPanel',                // Vue SPA 根路径
+        '/AdminPanel/',
+        '/AdminPanel/login',          // Vue Router 登录路径
+        '/AdminPanel/index.html',     // SPA 入口
         '/AdminPanel/VCPLogo2.png',
         '/AdminPanel/favicon.ico',
-        '/AdminPanel/style.css',
-        '/AdminPanel/woff.css',
-        '/AdminPanel/font.woff2'
+    ];
+    // 前缀白名单（Vite 打包资源 + 插件基座）
+    const publicPrefixes = [
+        '/AdminPanel/assets/',
+        '/plugin-shell/',
     ];
 
     const isVerifyEndpoint = req.path === '/admin_api/verify-login';
@@ -62,7 +68,7 @@ const adminAuth = (req, res, next) => {
     ];
     const isReadOnlyPath = readOnlyDashboardPaths.some(p => req.path.startsWith(p));
 
-    if (publicPaths.includes(req.path)) {
+    if (publicPaths.includes(req.path) || publicPrefixes.some(p => req.path.startsWith(p))) {
         return next();
     }
 
@@ -136,7 +142,7 @@ const adminAuth = (req, res, next) => {
             (req.headers.accept && req.headers.accept.includes('application/json'))) {
             return res.status(401).json({ error: 'Unauthorized' });
         } else if (req.path.startsWith('/AdminPanel')) {
-            return res.redirect('/AdminPanel/login.html');
+            return res.redirect('/AdminPanel/login');
         } else {
             res.setHeader('WWW-Authenticate', 'Basic realm="Admin Panel"');
             return res.status(401).send('<h1>401 Unauthorized</h1>');
@@ -150,8 +156,73 @@ const adminAuth = (req, res, next) => {
 
 app.use(adminAuth);
 
-// 静态文件
-app.use('/AdminPanel', express.static(path.join(__dirname, 'AdminPanel')));
+// ============================================================
+// 静态面板挂载（ADMIN_PANEL_SOURCE 可配置，支持多面板切换）
+// 按优先级查找候选目录，第一个有效的挂到 /AdminPanel/*
+// ============================================================
+let mountedPanelPath = null;
+(function mountAdminPanel() {
+    const configured = (process.env.ADMIN_PANEL_SOURCE || '').trim();
+    const candidates = [];
+
+    // 1. 用户明确配置的路径（可绝对可相对）
+    if (configured) {
+        candidates.push({
+            path: path.isAbsolute(configured) ? configured : path.resolve(__dirname, configured),
+            source: 'ADMIN_PANEL_SOURCE',
+        });
+    }
+    // 2. 独立面板仓库的 dist（默认：git clone 到同级目录 + npm run build）
+    candidates.push({
+        path: path.resolve(__dirname, '..', 'VCPtoolbox-Junior-Panel', 'dist'),
+        source: 'sibling repo',
+    });
+    // 3. symlink AdminPanel-Vue/dist（本地 open 的 symlink 指向独立仓库，跟 #2 殊途同归）
+    candidates.push({
+        path: path.join(__dirname, 'AdminPanel-Vue', 'dist'),
+        source: 'local symlink',
+    });
+
+    for (const c of candidates) {
+        try {
+            const indexPath = path.join(c.path, 'index.html');
+            if (fsSync.existsSync(c.path) && fsSync.existsSync(indexPath)) {
+                app.use('/AdminPanel', express.static(c.path));
+                // SPA history fallback：未命中静态资源的 /AdminPanel/* 路径全部返回 index.html
+                // Vue Router 接管客户端路由（/AdminPanel/login、/dashboard 等）
+                app.get(/^\/AdminPanel(\/.*)?$/, (req, res) => {
+                    res.sendFile(indexPath);
+                });
+                mountedPanelPath = c.path;
+                console.log(`[AdminServer] 面板已挂载: ${c.path} (来源: ${c.source}) + SPA fallback`);
+                return;
+            }
+        } catch (_) { /* ignore */ }
+    }
+
+    // 所有候选都失败 → 挂一个提示页
+    app.get('/AdminPanel*', (req, res) => {
+        res.status(503).set('Content-Type', 'text/html; charset=utf-8').send(`<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>管理面板未配置</title>
+<style>body{font-family:system-ui,sans-serif;max-width:680px;margin:60px auto;padding:0 20px;background:#faf5f7;color:#3d2c3e;line-height:1.7;}
+h1{color:#b91c5c;}code{background:#fff;padding:2px 7px;border-radius:4px;border:1px solid rgba(212,116,142,0.2);}
+pre{background:#fff;padding:14px;border-radius:8px;border:1px solid rgba(212,116,142,0.2);overflow-x:auto;}</style></head>
+<body><h1>⚠️ 管理面板未配置</h1>
+<p>adminServer 未能找到任何可挂载的面板目录。请在 <code>config.env</code> 里配置 <code>ADMIN_PANEL_SOURCE</code>：</p>
+<pre># 示例 A：指向同级独立面板仓库（推荐）
+ADMIN_PANEL_SOURCE=../VCPtoolbox-Junior-Panel/dist
+
+# 示例 B：从 Release 解压到 data/panel
+ADMIN_PANEL_SOURCE=data/panel
+
+# 示例 C：绝对路径
+ADMIN_PANEL_SOURCE=/opt/my-custom-panel/dist</pre>
+<p>配置后重启 adminServer 即可。详见 <a href="https://github.com/lioensky/VCPToolBox-Junior">Junior 文档</a>。</p>
+</body></html>`);
+    });
+    console.warn('[AdminServer] ⚠ 未找到任何面板目录。/AdminPanel/* 将返回 503 提示页。候选:\n' +
+        candidates.map(c => `  - ${c.source}: ${c.path}`).join('\n'));
+})();
 
 // 默认路由：访问根路径重定向到 AdminPanel
 app.get('/', (req, res) => {
@@ -258,6 +329,8 @@ const localAdminModules = {
     schedules:         require('./routes/admin/schedules'),
     dailyNotes:        require('./routes/admin/dailyNotes'),
     dashboardLayout:   require('./routes/admin/dashboardLayout'),
+    panelRegistry:     require('./routes/admin/panelRegistry'),
+    sarPrompts:        require('./routes/admin/sarPrompts'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {
@@ -303,6 +376,16 @@ app.post('/admin_api/server/restart', async (req, res) => {
         restartReq.write('{}');
         restartReq.end();
     }, 300);
+});
+
+// 当前挂载的面板路径（adminServer 独占知识，不走反代）
+app.get('/admin_api/panel/current', (req, res) => {
+    res.json({
+        success: true,
+        mounted: mountedPanelPath,
+        source: process.env.ADMIN_PANEL_SOURCE || null,
+        fallbackUsed: !process.env.ADMIN_PANEL_SOURCE && mountedPanelPath !== null,
+    });
 });
 
 app.use('/admin_api', localAdminRouter);
@@ -370,12 +453,16 @@ app.use('/admin_api', (req, res, next) => {
         }
     });
 
-    // 转发请求体
+    // 转发请求体（空 body 的 POST/PUT/DELETE 不写入，避免 JSON.stringify(undefined) 引发 TypeError）
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-        const bodyData = JSON.stringify(req.body);
-        proxyReq.setHeader('Content-Type', 'application/json');
-        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
-        proxyReq.write(bodyData);
+        if (req.body !== undefined && req.body !== null) {
+            const bodyData = JSON.stringify(req.body);
+            if (bodyData !== undefined) {
+                proxyReq.setHeader('Content-Type', 'application/json');
+                proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+                proxyReq.write(bodyData);
+            }
+        }
     }
 
     proxyReq.end();
