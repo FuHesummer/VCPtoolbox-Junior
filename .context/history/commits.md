@@ -20,3 +20,6 @@
 | 2026-04-14 | 019d8c20 | — | feat(plugin-protocol): 插件 admin 协议 v2.0 + 4 大页面深度增强 + FoldingStore 修复 | 5 | 1 | high |
 | 2026-04-14 | 019d8c98 | — | feat(plugin-protocol): TVS 工具指南协议 v2.1（tvsVariables，move 策略） | 5 | 1 | med |
 | 2026-04-15 | 019d8fec | — | fix(plugin-protocol): PluginNavView 组件缓存 + TVS 协议保留种子 + 白名单隔离云插件 | 4 | 3 | med |
+| 2026-04-15 | 019d94e1 | f6765a1 | feat(arch): 解耦面板仓库 + ADMIN_PANEL_SOURCE 生态化 + 3 新页面（运维/模型提示词/panel-registry）| 12 | 2 | high |
+| 2026-04-15 | 019d94e2 | 1ca19e4 | feat(plugins-repo): 插件面板迭代（可视化编辑器 + dashboardCards + 三件套修复，跨 6 插件）| 6 | 1 | med |
+| 2026-04-15 | 019d94e3 | 93d59b8 | feat(panel-repo): 模型提示词页面（SarModel/SarPrompt 可视化 chip 编辑） | 3 | 0 | low |
