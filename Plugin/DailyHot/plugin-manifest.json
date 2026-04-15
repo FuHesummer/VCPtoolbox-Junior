@@ -15,9 +15,13 @@
     "timeout": 120000
   },
   "refreshIntervalCron": "0 */4 * * *",
-  "adminNav": {
-    "title": "每日热榜",
-    "icon": "trending_up"
+  "capabilities": {
+    "systemPromptPlaceholders": [
+      {
+        "placeholder": "{{VCPDailyHot}}",
+        "description": "包含所有主流平台（微博、知乎、B站等）实时热榜的综合信息。此占位符会周期性更新。"
+      }
+    ]
   },
   "dashboardCards": [
     {
@@ -27,12 +31,10 @@
       "source": "dashboard-card.html"
     }
   ],
-  "capabilities": {
-    "systemPromptPlaceholders": [
-      {
-        "placeholder": "{{VCPDailyHot}}",
-        "description": "包含所有主流平台（微博、知乎、B站等）实时热榜的综合信息。此占位符会周期性更新。"
-      }
-    ]
+  "adminNav": {
+    "title": "每日热榜",
+    "icon": "trending_up",
+    "type": "native",
+    "entry": "panel.js"
   }
 }

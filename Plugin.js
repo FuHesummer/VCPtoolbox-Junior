@@ -520,10 +520,11 @@ class PluginManager extends EventEmitter {
                     console.warn(`[PluginManager] [TVS] ${manifest.name}.${key} 声明的文件 ${srcPath} 不存在，跳过`);
                     continue;
                 } else if (targetExists && srcExists) {
-                    // TVStxt 已有文件（用户改过） + 插件也保留了源文件（异常）→ 以 TVStxt 为准，清理插件目录冗余
-                    try { await fs.unlink(srcPath); } catch {}
+                    // TVStxt 已有 + 插件目录也有 → 以 TVStxt 为准，**保留插件目录种子不清理**
+                    // 避免破坏主仓库 git tracked 的核心插件种子（Junior 本体的 Plugin/DailyNote/tvs/ 等）
+                    // 云安装的新插件场景仍走上一分支（!targetExists && srcExists）正常 move
                     if (this.debugMode) {
-                        console.log(`[PluginManager] [TVS] ${manifest.name} 重复注册 ${key}：保留 TVStxt/${filename}（用户版本），清理插件冗余`);
+                        console.log(`[PluginManager] [TVS] ${manifest.name} 重复注册 ${key}：沿用 TVStxt/${filename}，保留插件种子`);
                     }
                 } else {
                     // TVStxt 已有（插件目录没有）→ 正常情况，沿用

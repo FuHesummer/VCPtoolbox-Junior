@@ -229,3 +229,20 @@ Plugin/*/code.bin
 
 # 插件 npm install 产物（插件仓库协议不要求 commit lock）
 Plugin/*/package-lock.json
+
+# ==== Plugin/ 核心插件白名单 ====
+# 通过 PluginStore 从云商店安装的插件属于运行时数据，不纳入主仓库
+# 只保留 Junior 本体核心的 11 个插件（新增核心插件时加到下方 !Plugin/xxx/）
+Plugin/*/
+!Plugin/ContextFoldingV2/
+!Plugin/DailyHot/
+!Plugin/DailyNote/
+!Plugin/DailyNoteManager/
+!Plugin/DailyNotePanel/
+!Plugin/DailyNoteWrite/
+!Plugin/LightMemo/
+!Plugin/RAGDiaryPlugin/
+!Plugin/ToolBoxFoldMemo/
+!Plugin/UserAuth/
+!Plugin/VCPLog/
+!Plugin/CLAUDE.md

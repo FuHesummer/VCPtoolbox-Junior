@@ -90,11 +90,12 @@ async function loadNativeComponent() {
   // entry 相对于插件的 admin/ 目录（admin-assets 端点会自动拼前缀）
   const entry = manifest.value?.adminNav?.entry || 'panel.js'
 
-  // 如果已注册（切换回来时），直接取用
-  const existing = pluginComponents[props.name]
-  if (existing) {
-    nativeComponent.value = existing
-    return
+  // 强制清理旧注册（避免 panel.js 改动后走缓存拿旧组件）
+  // 开发体验优先：每次进入页面都重新执行插件 panel.js
+  delete pluginComponents[props.name]
+  if (injectedScriptEl) {
+    injectedScriptEl.remove()
+    injectedScriptEl = null
   }
 
   // 动态 <script> 加载插件入口（加时间戳绕缓存，方便迭代）
