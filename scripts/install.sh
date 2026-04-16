@@ -1,0 +1,576 @@
+#!/usr/bin/env bash
+# ============================================================
+# VCPtoolbox-Junior Linux 一键安装 / 管理脚本
+#
+# 用法：
+#   # 首次下载
+#   curl -fsSL https://raw.githubusercontent.com/FuHesummer/VCPtoolbox-Junior/main/scripts/install.sh -o install.sh
+#   chmod +x install.sh
+#   ./install.sh
+#
+#   # 后续管理（菜单内操作）
+#
+# 项目: https://github.com/FuHesummer/VCPtoolbox-Junior
+# 协议: CC BY-NC-SA 4.0
+# ============================================================
+set -u
+
+SCRIPT_VERSION="1.0.0"
+REPO="FuHesummer/VCPtoolbox-Junior"
+SCRIPT_URL="https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh"
+RELEASE_API="https://api.github.com/repos/${REPO}/releases/latest"
+DEFAULT_INSTALL_DIR="${HOME}/vcptoolbox-junior"
+PM2_NAME="vcp-junior"
+EXE_NAME="VCPtoolbox"
+CONFIG_FILE="${HOME}/.vcp-junior-install"
+
+# ------------------------------------------------------------
+# 颜色（终端 tty 且未禁用时启用）
+# ------------------------------------------------------------
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    C_RED=$'\033[31m'; C_GRN=$'\033[32m'; C_YLW=$'\033[33m'
+    C_BLU=$'\033[34m'; C_CYN=$'\033[36m'; C_DIM=$'\033[2m'
+    C_BLD=$'\033[1m'; C_RST=$'\033[0m'
+else
+    C_RED=; C_GRN=; C_YLW=; C_BLU=; C_CYN=; C_DIM=; C_BLD=; C_RST=
+fi
+
+info()  { printf "%sℹ%s  %s\n" "$C_BLU" "$C_RST" "$*"; }
+ok()    { printf "%s✓%s  %s\n" "$C_GRN" "$C_RST" "$*"; }
+warn()  { printf "%s⚠%s  %s\n" "$C_YLW" "$C_RST" "$*"; }
+err()   { printf "%s✗%s  %s\n" "$C_RED" "$C_RST" "$*" >&2; }
+ask()   { printf "%s?%s  %s" "$C_CYN" "$C_RST" "$*"; }
+
+# ------------------------------------------------------------
+# 状态变量
+# ------------------------------------------------------------
+ARCH=""
+INSTALL_DIR=""
+INSTALLED_VERSION=""
+LATEST_VERSION=""
+PM2_STATUS=""
+
+detect_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64)  ARCH="x64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        *) err "不支持的架构: $(uname -m)（仅 x86_64 / aarch64）"; exit 1 ;;
+    esac
+}
+
+load_install_dir() {
+    if [ -f "$CONFIG_FILE" ]; then
+        INSTALL_DIR="$(cat "$CONFIG_FILE" 2>/dev/null | head -1)"
+    fi
+    [ -z "$INSTALL_DIR" ] && INSTALL_DIR="$DEFAULT_INSTALL_DIR"
+}
+
+save_install_dir() {
+    echo "$INSTALL_DIR" > "$CONFIG_FILE"
+}
+
+refresh_status() {
+    # 已装版本
+    if [ -f "$INSTALL_DIR/.installed-version" ]; then
+        INSTALLED_VERSION="$(cat "$INSTALL_DIR/.installed-version" 2>/dev/null | head -1)"
+    else
+        INSTALLED_VERSION=""
+    fi
+
+    # pm2 状态
+    if command -v pm2 >/dev/null 2>&1; then
+        local raw
+        raw="$(pm2 jlist 2>/dev/null || echo '')"
+        if echo "$raw" | grep -q "\"name\":\"${PM2_NAME}\""; then
+            PM2_STATUS="$(echo "$raw" | tr ',' '\n' | grep -A1 "\"name\":\"${PM2_NAME}\"" | grep -oE '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
+            [ -z "$PM2_STATUS" ] && PM2_STATUS="unknown"
+        else
+            PM2_STATUS="未注册"
+        fi
+    else
+        PM2_STATUS="pm2 未装"
+    fi
+}
+
+fetch_latest_version() {
+    LATEST_VERSION="$(curl -fsSL --max-time 10 "$RELEASE_API" 2>/dev/null \
+        | grep '"tag_name"' | head -1 | cut -d'"' -f4)"
+    [ -z "$LATEST_VERSION" ] && LATEST_VERSION="（拉取失败）"
+}
+
+# ------------------------------------------------------------
+# 依赖
+# ------------------------------------------------------------
+check_deps() {
+    local missing=()
+    command -v curl >/dev/null 2>&1 || missing+=("curl")
+    command -v tar  >/dev/null 2>&1 || missing+=("tar")
+    if [ ${#missing[@]} -gt 0 ]; then
+        err "缺少基础依赖: ${missing[*]}"
+        echo "  Debian/Ubuntu: sudo apt-get install -y ${missing[*]}"
+        echo "  CentOS/RHEL:   sudo yum install -y ${missing[*]}"
+        exit 1
+    fi
+}
+
+check_pm2() {
+    if ! command -v pm2 >/dev/null 2>&1; then
+        err "pm2 未安装"
+        echo ""
+        echo "请先装 Node.js (>=18) 和 pm2："
+        echo "  # Node.js 22 (Debian/Ubuntu)"
+        echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
+        echo "  sudo apt-get install -y nodejs"
+        echo ""
+        echo "  # pm2"
+        echo "  sudo npm install -g pm2"
+        return 1
+    fi
+    return 0
+}
+
+# ------------------------------------------------------------
+# 菜单界面
+# ------------------------------------------------------------
+print_header() {
+    clear
+    printf "%s╔══════════════════════════════════════════════════╗%s\n" "$C_CYN" "$C_RST"
+    printf "%s║%s     %sVCPtoolbox-Junior 管理工具%s     %sv%s%s           %s║%s\n" \
+        "$C_CYN" "$C_RST" "$C_BLD" "$C_RST" "$C_DIM" "$SCRIPT_VERSION" "$C_RST" "$C_CYN" "$C_RST"
+    printf "%s╠══════════════════════════════════════════════════╣%s\n" "$C_CYN" "$C_RST"
+
+    local dir_show="$INSTALL_DIR"
+    [ ${#dir_show} -gt 38 ] && dir_show="...${dir_show: -35}"
+    printf "%s║%s  安装路径: %-38s  %s║%s\n" "$C_CYN" "$C_RST" "$dir_show" "$C_CYN" "$C_RST"
+
+    local ver_show="${INSTALLED_VERSION:-未安装}"
+    local ver_color="$C_DIM"
+    [ -n "$INSTALLED_VERSION" ] && ver_color="$C_GRN"
+    printf "%s║%s  当前版本: %s%-38s%s  %s║%s\n" \
+        "$C_CYN" "$C_RST" "$ver_color" "$ver_show" "$C_RST" "$C_CYN" "$C_RST"
+
+    local pm2_color="$C_DIM"
+    case "$PM2_STATUS" in
+        online)  pm2_color="$C_GRN" ;;
+        stopped|errored) pm2_color="$C_RED" ;;
+    esac
+    printf "%s║%s  pm2 状态: %s%-38s%s  %s║%s\n" \
+        "$C_CYN" "$C_RST" "$pm2_color" "$PM2_STATUS" "$C_RST" "$C_CYN" "$C_RST"
+
+    local latest_show="${LATEST_VERSION:-（未拉取）}"
+    local latest_color="$C_DIM"
+    if [ -n "$INSTALLED_VERSION" ] && [ -n "$LATEST_VERSION" ] && [ "$INSTALLED_VERSION" = "$LATEST_VERSION" ]; then
+        latest_color="$C_GRN"
+        latest_show="$latest_show ✓ 已最新"
+    elif [ -n "$INSTALLED_VERSION" ] && [ -n "$LATEST_VERSION" ]; then
+        latest_color="$C_YLW"
+        latest_show="$latest_show ⬆ 可更新"
+    fi
+    printf "%s║%s  最新版本: %s%-38s%s  %s║%s\n" \
+        "$C_CYN" "$C_RST" "$latest_color" "$latest_show" "$C_RST" "$C_CYN" "$C_RST"
+
+    printf "%s╠══════════════════════════════════════════════════╣%s\n" "$C_CYN" "$C_RST"
+    cat <<EOF
+${C_CYN}║${C_RST}   ${C_BLD}1${C_RST}) 安装 / 重新安装到最新 Release
+${C_CYN}║${C_RST}   ${C_BLD}2${C_RST}) 更新（保留 config.env + data/）
+${C_CYN}║${C_RST}   ${C_BLD}3${C_RST}) 启动服务
+${C_CYN}║${C_RST}   ${C_BLD}4${C_RST}) 停止服务
+${C_CYN}║${C_RST}   ${C_BLD}5${C_RST}) 重启服务
+${C_CYN}║${C_RST}   ${C_BLD}6${C_RST}) 查看状态（pm2 list + info）
+${C_CYN}║${C_RST}   ${C_BLD}7${C_RST}) 查看日志（实时跟随，Ctrl+C 退出）
+${C_CYN}║${C_RST}   ${C_BLD}8${C_RST}) 编辑 config.env
+${C_CYN}║${C_RST}   ${C_BLD}9${C_RST}) 配置开机自启（pm2 startup + save）
+${C_CYN}║${C_RST}  ${C_BLD}10${C_RST}) 更新本脚本（从 GitHub raw 拉新版）
+${C_CYN}║${C_RST}  ${C_BLD}11${C_RST}) 卸载（删目录 + pm2 delete）
+${C_CYN}║${C_RST}   ${C_BLD}r${C_RST}) 刷新状态
+${C_CYN}║${C_RST}   ${C_BLD}q${C_RST}) 退出
+${C_CYN}╚══════════════════════════════════════════════════╝${C_RST}
+EOF
+}
+
+pause() {
+    echo ""
+    read -r -p "按回车返回菜单..." _
+}
+
+# ------------------------------------------------------------
+# 操作：安装
+# ------------------------------------------------------------
+action_install() {
+    echo ""
+    info "准备安装 VCPtoolbox-Junior"
+    ask "安装路径 [${INSTALL_DIR}]: "
+    read -r input
+    if [ -n "$input" ]; then
+        # 展开 ~
+        input="${input/#\~/$HOME}"
+        INSTALL_DIR="$(cd "$(dirname "$input")" 2>/dev/null && pwd)/$(basename "$input")" 2>/dev/null || INSTALL_DIR="$input"
+    fi
+    save_install_dir
+
+    if [ -d "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
+        warn "目录非空: $INSTALL_DIR"
+        ask "继续覆盖安装？已有 config.env 会被保留 [y/N]: "
+        read -r confirm
+        [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return
+    fi
+
+    mkdir -p "$INSTALL_DIR" || { err "无法创建目录"; return 1; }
+    cd "$INSTALL_DIR" || return 1
+
+    [ -z "$LATEST_VERSION" ] || [[ "$LATEST_VERSION" == *失败* ]] && fetch_latest_version
+    if [[ "$LATEST_VERSION" == *失败* ]]; then
+        err "无法获取最新版本，请检查网络"
+        return 1
+    fi
+
+    local asset="vcp-junior-linux-${ARCH}.tar.gz"
+    local url="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}"
+
+    info "下载 ${asset} (${LATEST_VERSION})..."
+    if ! curl -fL --progress-bar -o "$asset" "$url"; then
+        err "下载失败: $url"
+        return 1
+    fi
+
+    # 备份可能已存在的 config.env 和 data/
+    local backup_cfg=""
+    local backup_data=""
+    if [ -f config.env ]; then
+        backup_cfg="$(mktemp)"
+        cp config.env "$backup_cfg"
+    fi
+    if [ -d data ]; then
+        backup_data="$(mktemp -d)"
+        cp -r data "$backup_data/"
+    fi
+
+    info "解压..."
+    tar -xzf "$asset" || { err "解压失败"; return 1; }
+    rm -f "$asset"
+
+    # 解压后内容在 vcp-junior-linux-${ARCH}/ 下，扁平化到 INSTALL_DIR
+    local extracted="vcp-junior-linux-${ARCH}"
+    if [ -d "$extracted" ]; then
+        # 使用 cp + rm 避免跨文件系统 mv 问题
+        (shopt -s dotglob; cp -r "$extracted"/* . 2>/dev/null || true)
+        rm -rf "$extracted"
+    fi
+
+    # 恢复用户数据
+    if [ -n "$backup_cfg" ] && [ -f "$backup_cfg" ]; then
+        cp "$backup_cfg" config.env
+        rm -f "$backup_cfg"
+        info "已保留原 config.env"
+    elif [ -f config.env.example ] && [ ! -f config.env ]; then
+        cp config.env.example config.env
+        warn "已复制 config.env.example → config.env，**务必**菜单 8 编辑填入 API 密钥等"
+    fi
+
+    if [ -n "$backup_data" ] && [ -d "$backup_data/data" ]; then
+        rm -rf data
+        cp -r "$backup_data/data" .
+        rm -rf "$backup_data"
+        info "已保留原 data/ 目录"
+    fi
+
+    chmod +x "$EXE_NAME" 2>/dev/null || true
+    echo "$LATEST_VERSION" > .installed-version
+    INSTALLED_VERSION="$LATEST_VERSION"
+
+    ok "安装完成 → $INSTALL_DIR ($LATEST_VERSION)"
+    echo ""
+    info "下一步："
+    echo "  1. 菜单 8 → 编辑 config.env（填 API_Key / Key / AdminPassword 等）"
+    echo "  2. 菜单 3 → 启动服务"
+    echo "  3. 菜单 6 / 7 → 查看状态 / 日志"
+}
+
+# ------------------------------------------------------------
+# 操作：更新（保留 config.env + data/）
+# ------------------------------------------------------------
+action_update() {
+    [ -z "$INSTALLED_VERSION" ] && { err "尚未安装，先执行菜单 1"; return; }
+
+    fetch_latest_version
+    if [[ "$LATEST_VERSION" == *失败* ]]; then
+        err "无法获取最新版本"
+        return
+    fi
+
+    if [ "$INSTALLED_VERSION" = "$LATEST_VERSION" ]; then
+        ok "已是最新 ($LATEST_VERSION)"
+        return
+    fi
+
+    info "当前: $INSTALLED_VERSION  →  最新: $LATEST_VERSION"
+    ask "确认更新？[y/N]: "
+    read -r confirm
+    [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return
+
+    local was_online=0
+    if [ "$PM2_STATUS" = "online" ]; then
+        was_online=1
+        info "停止服务..."
+        pm2 stop "$PM2_NAME" >/dev/null 2>&1 || true
+    fi
+
+    cd "$INSTALL_DIR" || return 1
+    local asset="vcp-junior-linux-${ARCH}.tar.gz"
+    local url="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}"
+
+    info "下载..."
+    if ! curl -fL --progress-bar -o ".update.tar.gz" "$url"; then
+        err "下载失败"
+        return 1
+    fi
+
+    info "解压到临时目录..."
+    rm -rf .tmp-update
+    mkdir .tmp-update
+    tar -xzf .update.tar.gz -C .tmp-update
+
+    local extracted=".tmp-update/vcp-junior-linux-${ARCH}"
+    if [ ! -d "$extracted" ]; then
+        err "压缩包结构异常"
+        rm -rf .tmp-update .update.tar.gz
+        return 1
+    fi
+
+    info "替换文件（保留 config.env + data/）..."
+    # 遍历新包内容，除了 config.env 和 data/ 以外全部替换
+    (shopt -s dotglob
+     for item in "$extracted"/*; do
+        local name
+        name="$(basename "$item")"
+        case "$name" in
+            config.env|data) continue ;;
+        esac
+        rm -rf "./$name"
+        cp -r "$item" "./$name"
+     done)
+
+    # 如果本地没有 config.env 但新包有 example，补个 example（不覆盖 config.env）
+    if [ -f "$extracted/config.env.example" ]; then
+        cp "$extracted/config.env.example" ./config.env.example
+    fi
+
+    rm -rf .tmp-update .update.tar.gz
+    chmod +x "$EXE_NAME" 2>/dev/null || true
+    echo "$LATEST_VERSION" > .installed-version
+    INSTALLED_VERSION="$LATEST_VERSION"
+
+    if [ "$was_online" -eq 1 ]; then
+        info "重启服务..."
+        pm2 restart "$PM2_NAME" >/dev/null 2>&1 || pm2 start "./$EXE_NAME" --name "$PM2_NAME" --interpreter none
+    fi
+
+    ok "更新完成 → $LATEST_VERSION"
+}
+
+# ------------------------------------------------------------
+# 操作：启动/停止/重启
+# ------------------------------------------------------------
+action_start() {
+    [ -z "$INSTALLED_VERSION" ] && { err "尚未安装"; return; }
+    check_pm2 || return
+    cd "$INSTALL_DIR" || return 1
+
+    if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+        pm2 start "$PM2_NAME"
+    else
+        pm2 start "./$EXE_NAME" --name "$PM2_NAME" --interpreter none
+    fi
+    ok "已启动"
+}
+
+action_stop() {
+    check_pm2 || return
+    pm2 stop "$PM2_NAME" 2>&1 | tail -3
+    ok "已停止"
+}
+
+action_restart() {
+    check_pm2 || return
+    pm2 restart "$PM2_NAME" 2>&1 | tail -3
+    ok "已重启"
+}
+
+action_status() {
+    check_pm2 || return
+    pm2 list
+    echo ""
+    pm2 info "$PM2_NAME" 2>/dev/null || warn "$PM2_NAME 未注册"
+}
+
+action_logs() {
+    check_pm2 || return
+    info "实时日志（Ctrl+C 退出）"
+    echo ""
+    pm2 logs "$PM2_NAME"
+}
+
+# ------------------------------------------------------------
+# 操作：编辑 config.env
+# ------------------------------------------------------------
+action_edit_config() {
+    [ -z "$INSTALLED_VERSION" ] && { err "尚未安装"; return; }
+    local cfg="$INSTALL_DIR/config.env"
+    if [ ! -f "$cfg" ]; then
+        if [ -f "$INSTALL_DIR/config.env.example" ]; then
+            cp "$INSTALL_DIR/config.env.example" "$cfg"
+            info "已从 example 创建 config.env"
+        else
+            err "config.env 不存在"
+            return
+        fi
+    fi
+
+    local editor="${EDITOR:-${VISUAL:-}}"
+    if [ -z "$editor" ]; then
+        for e in nano vim vi; do
+            if command -v "$e" >/dev/null 2>&1; then editor="$e"; break; fi
+        done
+    fi
+    [ -z "$editor" ] && { err "未找到可用编辑器（nano/vim/vi）"; return; }
+
+    "$editor" "$cfg"
+    warn "修改了 config.env 后记得重启服务（菜单 5）"
+}
+
+# ------------------------------------------------------------
+# 操作：开机自启
+# ------------------------------------------------------------
+action_startup() {
+    check_pm2 || return
+    echo ""
+    info "pm2 会输出一条 sudo 命令，复制到终端执行"
+    echo ""
+    pm2 startup
+    echo ""
+    ask "执行 pm2 save 保存当前进程列表？[Y/n]: "
+    read -r confirm
+    if [ "$confirm" != "n" ] && [ "$confirm" != "N" ]; then
+        pm2 save
+        ok "已保存"
+    fi
+}
+
+# ------------------------------------------------------------
+# 操作：脚本自更新
+# ------------------------------------------------------------
+action_self_update() {
+    info "从 $SCRIPT_URL 拉取..."
+    local tmp
+    tmp="$(mktemp)"
+    if ! curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$tmp"; then
+        err "拉取失败"
+        rm -f "$tmp"
+        return 1
+    fi
+    if [ ! -s "$tmp" ]; then
+        err "拉取内容为空"
+        rm -f "$tmp"
+        return 1
+    fi
+
+    local remote_ver
+    remote_ver="$(grep -E '^SCRIPT_VERSION=' "$tmp" | head -1 | cut -d'"' -f2)"
+    info "当前版本: $SCRIPT_VERSION"
+    info "远端版本: ${remote_ver:-未知}"
+
+    if [ -n "$remote_ver" ] && [ "$remote_ver" = "$SCRIPT_VERSION" ]; then
+        ok "脚本已是最新，无需更新"
+        rm -f "$tmp"
+        return
+    fi
+
+    ask "替换当前脚本 $0？[y/N]: "
+    read -r confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        rm -f "$tmp"
+        return
+    fi
+
+    chmod +x "$tmp"
+    # 写入自己
+    if cp "$tmp" "$0"; then
+        rm -f "$tmp"
+        ok "脚本已更新到 ${remote_ver:-新版}，请重新运行: bash $0"
+        exit 0
+    else
+        err "无法替换脚本（权限不足？）"
+        echo "  手动替换: sudo cp $tmp $0"
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------
+# 操作：卸载
+# ------------------------------------------------------------
+action_uninstall() {
+    [ -z "$INSTALL_DIR" ] && { err "没找到安装目录"; return; }
+
+    warn "即将卸载"
+    echo "  目录: $INSTALL_DIR"
+    echo "  进程: $PM2_NAME"
+    echo ""
+    warn "所有数据（config.env / data/ / DebugLog/）都会被删除，不可恢复"
+    ask "输入 yes 确认: "
+    read -r confirm
+    if [ "$confirm" != "yes" ]; then
+        info "已取消"
+        return
+    fi
+
+    if command -v pm2 >/dev/null 2>&1; then
+        pm2 delete "$PM2_NAME" 2>/dev/null || true
+        pm2 save 2>/dev/null || true
+    fi
+    rm -rf "$INSTALL_DIR"
+    rm -f "$CONFIG_FILE"
+
+    ok "已卸载"
+    INSTALLED_VERSION=""
+    PM2_STATUS="未注册"
+}
+
+# ------------------------------------------------------------
+# 主循环
+# ------------------------------------------------------------
+main() {
+    check_deps
+    detect_arch
+    load_install_dir
+    refresh_status
+    fetch_latest_version
+
+    while true; do
+        print_header
+        ask "选择 [1-11/r/q]: "
+        read -r choice
+
+        case "$choice" in
+            1)  action_install ;;
+            2)  action_update ;;
+            3)  action_start ;;
+            4)  action_stop ;;
+            5)  action_restart ;;
+            6)  action_status ;;
+            7)  action_logs ;;
+            8)  action_edit_config ;;
+            9)  action_startup ;;
+            10) action_self_update ;;
+            11) action_uninstall ;;
+            r|R) fetch_latest_version ;;
+            q|Q) echo ""; ok "再见 👋"; exit 0 ;;
+            "") ;;
+            *) warn "无效选择: $choice" ;;
+        esac
+
+        refresh_status
+        pause
+    done
+}
+
+main "$@"
