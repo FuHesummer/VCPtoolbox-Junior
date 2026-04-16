@@ -80,6 +80,19 @@ module.exports = function(options) {
                 try { await pluginManager._unregisterPluginTvsVariables(name, 'uninstall'); }
                 catch (e) { console.warn(`[pluginStore route] TVS 还原失败（继续卸载）: ${e.message}`); }
             }
+            // 协议钩子：反向清理 envContributions（append-csv 移除、default 保留用户改动）
+            // 同步 data/plugin-env-registry.json，防止残留字段污染 config.env
+            if (pluginManager && typeof pluginManager._unregisterPluginEnvContributions === 'function') {
+                try { await pluginManager._unregisterPluginEnvContributions(name); }
+                catch (e) { console.warn(`[pluginStore route] envContributions 反注册失败（继续卸载）: ${e.message}`); }
+            }
+            // 主注册表清理：从 PluginManager 内存移除本插件（plugins/messagePreprocessors/
+            // serviceModules/staticPlaceholderValues/scheduledJobs/adminRouterCache），
+            // 并重建 VCP 工具描述。避免 /admin_api/plugins 等接口残留已卸载的插件。
+            if (pluginManager && typeof pluginManager._unregisterSinglePlugin === 'function') {
+                try { await pluginManager._unregisterSinglePlugin(name); }
+                catch (e) { console.warn(`[pluginStore route] 主注册表反注册失败（继续卸载）: ${e.message}`); }
+            }
             const result = await store.uninstall(name);
             res.json(result);
         } catch (error) {

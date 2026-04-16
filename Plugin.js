@@ -782,6 +782,103 @@ class PluginManager extends EventEmitter {
         await this._persistEnvRegistry();
     }
 
+    /**
+     * 单插件整体反注册 —— 从 PluginManager 内存中移除指定插件的所有登记
+     *
+     * 与 _reloadPlugins 的全量清理不同，此方法只清理单个插件，其他插件不受影响。
+     * 协议完整性需要调用方按顺序执行：
+     *   1. _unregisterPluginTvsVariables(name, 'uninstall')  — TVS 还原
+     *   2. _unregisterPluginEnvContributions(name)           — env 回滚
+     *   3. _unregisterSinglePlugin(name)                     — 主注册表清理
+     *   4. 文件系统目录删除（store.uninstall）
+     *
+     * @param {string} pluginName
+     * @returns {Promise<{found: boolean, cleaned: string[]}>}
+     */
+    async _unregisterSinglePlugin(pluginName) {
+        const manifest = this.plugins.get(pluginName);
+        if (!manifest) {
+            return { found: false, cleaned: [] };
+        }
+
+        const cleaned = [];
+
+        // 1. service 插件：先 shutdown，再移除
+        if (this.serviceModules.has(pluginName)) {
+            const serviceData = this.serviceModules.get(pluginName);
+            try {
+                if (serviceData && serviceData.module && typeof serviceData.module.shutdown === 'function') {
+                    await serviceData.module.shutdown();
+                }
+            } catch (e) {
+                console.warn(`[PluginManager] ${pluginName} service shutdown 失败（继续清理）: ${e.message}`);
+            }
+            this.serviceModules.delete(pluginName);
+            cleaned.push('serviceModules');
+        }
+
+        // 2. messagePreprocessor 注册表 + 顺序数组
+        if (this.messagePreprocessors.has(pluginName)) {
+            this.messagePreprocessors.delete(pluginName);
+            cleaned.push('messagePreprocessors');
+        }
+        const orderIdx = this.preprocessorOrder.indexOf(pluginName);
+        if (orderIdx >= 0) {
+            this.preprocessorOrder.splice(orderIdx, 1);
+            cleaned.push('preprocessorOrder');
+        }
+
+        // 3. static 插件占位符
+        if (Array.isArray(manifest.systemPromptPlaceholders)) {
+            for (const ph of manifest.systemPromptPlaceholders) {
+                if (ph.placeholder && this.staticPlaceholderValues.has(ph.placeholder)) {
+                    this.staticPlaceholderValues.delete(ph.placeholder);
+                    cleaned.push(`staticPlaceholder:${ph.placeholder}`);
+                }
+            }
+        }
+
+        // 4. 定时任务
+        if (this.scheduledJobs.has(pluginName)) {
+            try {
+                const job = this.scheduledJobs.get(pluginName);
+                if (job && typeof job.cancel === 'function') job.cancel();
+            } catch (e) {
+                console.warn(`[PluginManager] ${pluginName} job cancel 失败（继续清理）: ${e.message}`);
+            }
+            this.scheduledJobs.delete(pluginName);
+            cleaned.push('scheduledJobs');
+        }
+
+        // 5. pluginAdminRouter 缓存 + require.cache 清理
+        if (this._pluginAdminRouterCache && this._pluginAdminRouterCache.has(pluginName)) {
+            this._pluginAdminRouterCache.delete(pluginName);
+            cleaned.push('pluginAdminRouterCache');
+        }
+        if (manifest.basePath) {
+            try {
+                const adminRouterPath = path.join(manifest.basePath, 'admin-router.js');
+                if (require.cache[require.resolve(adminRouterPath)]) {
+                    delete require.cache[require.resolve(adminRouterPath)];
+                    cleaned.push('requireCache:admin-router');
+                }
+            } catch (_) { /* 模块未加载过，忽略 */ }
+        }
+
+        // 6. 主注册表（最后删，上面各步需要 manifest 信息）
+        this.plugins.delete(pluginName);
+        cleaned.push('plugins');
+
+        // 7. 重建 VCP 工具描述（individualPluginDescriptions 被 buildVCPDescription 重建）
+        this.buildVCPDescription();
+
+        if (this.debugMode) {
+            console.log(`[PluginManager] _unregisterSinglePlugin(${pluginName}) cleaned: ${cleaned.join(', ')}`);
+        }
+
+        return { found: true, cleaned };
+    }
+
     // —— env 文本工具 ——
 
     /** 找到某 key 的行：{ lineIdx, key, value, rawLine, prefix, quote } 或 null */
