@@ -26,3 +26,4 @@
 | 2026-04-16 | 019d019d | cdfdf6b | feat(arch): 论坛解耦 + envContributions 协议 + 上游 VCPToolBox 一键迁移 | 5 | 1 | high |
 | 2026-04-16 | 019d019d | 8bf93cb | feat(views): 上游迁移向导 + PromptEditor 智能化 + 配置/变量编辑器重构 | 6 | 2 | high |
 | 2026-04-16 | 019d019d | 77f8314 | feat(VCPForum): 完全解耦本体（admin-router + native panel + envContributions） | 3 | 1 | med |
+| 2026-04-16 | 019d95c1 | a893642 | ✨ feat(plugin): 4 个记忆系统新核心（9→13）+ TimelineOrganizer + 3 AI 工具插件 | 6 | 0 | med |
