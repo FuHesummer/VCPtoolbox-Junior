@@ -3,5 +3,5 @@
   "output": "dist/sea-prep.blob",
   "disableExperimentalSEAWarning": true,
   "useSnapshot": false,
-  "useCodeCache": false
+  "useCodeCache": true
 }

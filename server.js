@@ -1111,8 +1111,8 @@ const adminPanelRoutes = require('./routes/adminPanelRoutes')(
     }
 );
 
-// 新增：引入 VCP 论坛 API 路由
-const forumApiRoutes = require('./routes/forumApi');
+// 论坛 API 已解耦到 VCPForum 插件（admin-router.js）
+// 通过 /admin_api/plugins/VCPForum/api/* 访问，由 Plugin.js lazy-load
 
 // --- End Admin API Router ---
 
@@ -1195,9 +1195,7 @@ async function initialize() {
     await pluginManager.initializeServices(app, adminPanelRoutes, __dirname);
     // 在所有服务插件都注册完路由后，再将 adminApiRouter 挂载到主 app 上
     app.use('/admin_api', adminPanelRoutes);
-    // 挂载 VCP 论坛 API 路由
-    app.use('/admin_api/forum', forumApiRoutes);
-    console.log('服务类插件初始化完成，管理面板 API 路由和 VCP 论坛 API 路由已挂载。');
+    console.log('服务类插件初始化完成，管理面板 API 路由已挂载。');
 
     // --- 新增：通用依赖注入 ---
     // 在所有服务都初始化完毕后，再执行依赖注入，确保 VCPLog 等服务已准备就绪。

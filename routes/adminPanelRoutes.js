@@ -54,6 +54,7 @@ module.exports = function (DEBUG_MODE, dailyNoteRootPath, pluginManager, getCurr
         maintenance:       require('./admin/maintenance'),
         panelRegistry:     require('./admin/panelRegistry'),
         sarPrompts:        require('./admin/sarPrompts'),
+        migration:         require('./admin/migration'),
     };
 
     for (const [moduleName, moduleFactory] of Object.entries(adminModules)) {

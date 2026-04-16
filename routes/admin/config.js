@@ -124,5 +124,84 @@ module.exports = function(options) {
         }
     });
 
+    // ============ env 绑定行级操作（供 TvsEditor 使用） ============
+    // 把 TVS 文件加入 config.env：追加一行 KEY=filename.txt
+    router.post('/config/env-binding/add', async (req, res) => {
+        const { key, value } = req.body || {};
+        if (!key || typeof key !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            return res.status(400).json({ error: 'key 必须为合法的环境变量名（字母、数字、下划线，以字母或下划线开头）' });
+        }
+        if (typeof value !== 'string' || value.trim() === '') {
+            return res.status(400).json({ error: 'value 必须为非空字符串' });
+        }
+        try {
+            const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'config.env');
+            let text = '';
+            try { text = await fs.readFile(configPath, 'utf-8'); } catch { /* 文件不存在时新建 */ }
+            const lines = text.split(/\r?\n/);
+
+            // 检查是否已有该 key
+            const keyRegex = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`);
+            const existingIdx = lines.findIndex(l => keyRegex.test(l));
+
+            const needQuote = /[\s#"']/.test(value);
+            const q = needQuote ? '"' : '';
+            const newLine = `${key}=${q}${value}${q}`;
+
+            let action = '';
+            if (existingIdx >= 0) {
+                lines[existingIdx] = newLine;
+                action = 'updated';
+            } else {
+                if (lines.length > 0 && lines[lines.length - 1] !== '') lines.push('');
+                lines.push(newLine);
+                action = 'appended';
+            }
+            await fs.writeFile(configPath, lines.join('\n'), 'utf-8');
+            process.env[key] = value;
+            res.json({ ok: true, action, key, value });
+        } catch (error) {
+            console.error('[env-binding/add] error:', error);
+            res.status(500).json({ error: 'Failed to write config.env', details: error.message });
+        }
+    });
+
+    // 删除 config.env 中的 env 绑定
+    // 两种模式：
+    //   A. 按 key 删除：body { key: "VarXxx" }
+    //   B. 按 filename 删除：body { filename: "xxx.txt" } → 删除所有 VALUE 匹配该 filename 的行
+    router.post('/config/env-binding/remove', async (req, res) => {
+        const { key, filename } = req.body || {};
+        if (!key && !filename) {
+            return res.status(400).json({ error: '需要提供 key 或 filename 至少一个' });
+        }
+        try {
+            const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'config.env');
+            let text = '';
+            try { text = await fs.readFile(configPath, 'utf-8'); } catch {
+                return res.status(404).json({ error: 'config.env 不存在' });
+            }
+            const lines = text.split(/\r?\n/);
+            const removed = [];
+            const newLines = lines.filter(line => {
+                const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(["']?)(.*?)\2\s*$/);
+                if (!m) return true;
+                const [, k, , v] = m;
+                if (key && k === key) { removed.push({ key: k, value: v }); return false; }
+                if (filename && v === filename) { removed.push({ key: k, value: v }); return false; }
+                return true;
+            });
+            if (removed.length === 0) {
+                return res.json({ ok: true, removed: [], message: '未匹配任何行' });
+            }
+            await fs.writeFile(configPath, newLines.join('\n'), 'utf-8');
+            for (const r of removed) delete process.env[r.key];
+            res.json({ ok: true, removed });
+        } catch (error) {
+            console.error('[env-binding/remove] error:', error);
+            res.status(500).json({ error: 'Failed to write config.env', details: error.message });
+        }
+    });
+
     return router;
 };

@@ -43,8 +43,9 @@ const NATIVE_MODULES = [
 ];
 
 // User-facing directories to include
+// 注意：AdminPanel 解耦后不在本体，由 prepareAdminPanel() 独立处理
+// Plugin/ 只复制本体 9 个内置核心；仓库扩展插件由 preparePlugins() 合并
 const USER_DIRS = [
-    'AdminPanel',
     'Agent',
     'Plugin',
     'knowledge',
@@ -64,8 +65,22 @@ const USER_FILES = [
     'config.env.example',
     'maintain.js',
     'agent_map.json',
+    'plugin-ui-prefs.json',
+    'docker-persist.json',
     'LICENSE',
     'README.md',
+];
+
+// 预置的 data/ 目录文件（首次启动避免 ENOENT）
+const DATA_SEED_FILES = [
+    'panel-registry.json',
+    'dashboardLayout.json',
+    'dashboard-bubbles.json',
+];
+
+// 预创建的 data/ 子目录
+const DATA_SEED_DIRS = [
+    'maintenance-logs',
 ];
 
 async function main() {
@@ -187,17 +202,15 @@ async function main() {
     // ===== Step 4: Copy node_modules + user dirs =====
     console.log('📁 Step 4/5: Copying node_modules & user files...');
 
-    // Copy full node_modules.
+    // Copy production node_modules（剔除 devDep 顶层包）
     // Core modules (modules/TextChunker.js etc.) are loaded from disk by plugins
     // via relative paths and require npm packages (dotenv, express, etc.).
     // These can't be resolved from the bundle, only from node_modules on disk.
     // Plugin package.json handles plugin-specific deps independently.
     const nmSrc = path.join(ROOT, 'node_modules');
     if (fs.existsSync(nmSrc)) {
-        console.log('   Copying node_modules...');
-        await copyRecursive(nmSrc, path.join(outputDir, 'node_modules'), [
-            '.cache', '.package-lock.json',
-        ]);
+        console.log('   Copying node_modules (production only)...');
+        await copyProductionNodeModules(nmSrc, path.join(outputDir, 'node_modules'));
     }
 
     // rust-vexus-lite
@@ -225,6 +238,15 @@ async function main() {
             fs.copyFileSync(src, path.join(outputDir, file));
         }
     }
+
+    // AdminPanel（方案 C 解耦后从独立仓库注入）
+    await prepareAdminPanel(outputDir);
+
+    // Plugins（合并插件仓库的扩展插件到本体 Plugin/）
+    await preparePlugins(outputDir);
+
+    // data/ 骨架（预置 panel-registry.json 等避免首启 ENOENT）
+    await prepareDataDir(outputDir);
 
     // ===== Step 5: Create archive =====
     console.log('📦 Step 5/5: Creating distributable archive...');
@@ -367,6 +389,189 @@ function downloadFile(url, destPath) {
             file.on('finish', () => { file.close(); console.log(''); resolve(); });
         }).on('error', (err) => { file.close(); reject(err); });
     });
+}
+
+/**
+ * 复制 production-only node_modules
+ * 策略：顶层 skip devDep 包 + @esbuild scope（平台二进制 scope 包）
+ * 不做深度 prune —— devDep 的传递依赖可能被 prod dep 共用，保守保留
+ */
+async function copyProductionNodeModules(src, dest) {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const devDeps = Object.keys(pkg.devDependencies || {});
+
+    // dev 专属 scope（平台二进制包）
+    const devScopes = new Set(['@esbuild']);
+
+    const skipNames = new Set([
+        ...devDeps,
+        '.cache',
+        '.package-lock.json',
+    ]);
+
+    fs.mkdirSync(dest, { recursive: true });
+    let totalSize = 0, skippedCount = 0;
+
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+            // 顶层散文件（如 .package-lock.json）
+            if (skipNames.has(entry.name)) continue;
+            fs.copyFileSync(path.join(src, entry.name), path.join(dest, entry.name));
+            continue;
+        }
+
+        if (skipNames.has(entry.name) || devScopes.has(entry.name)) {
+            skippedCount++;
+            continue;
+        }
+
+        await copyRecursive(path.join(src, entry.name), path.join(dest, entry.name), [
+            '.cache', '__pycache__',
+        ]);
+    }
+
+    console.log(`   跳过 ${skippedCount} 个 devDep 顶层包`);
+}
+
+/**
+ * 准备 AdminPanel 目录（方案 C 解耦架构）
+ *
+ * 查找顺序：
+ * 1. env ADMIN_PANEL_DIST_PATH（CI 注入）
+ * 2. sibling repo ../VCPtoolbox-Junior-Panel/dist（并列仓库）
+ * 3. 本地 AdminPanel-Vue/dist（开发者 symlink 产物）
+ *
+ * 找不到时警告但不失败 —— 用户可后续部署时手动挂载
+ */
+async function prepareAdminPanel(outputDir) {
+    console.log('🎨 Preparing AdminPanel (decoupled)...');
+
+    const candidates = [];
+    const envPath = (process.env.ADMIN_PANEL_DIST_PATH || '').trim();
+    if (envPath) {
+        candidates.push({ path: path.resolve(envPath), source: 'env ADMIN_PANEL_DIST_PATH' });
+    }
+    candidates.push({
+        path: path.resolve(ROOT, '..', 'VCPtoolbox-Junior-Panel', 'dist'),
+        source: 'sibling repo',
+    });
+    candidates.push({
+        path: path.join(ROOT, 'AdminPanel-Vue', 'dist'),
+        source: 'local AdminPanel-Vue',
+    });
+
+    let picked = null;
+    for (const c of candidates) {
+        if (fs.existsSync(c.path) && fs.existsSync(path.join(c.path, 'index.html'))) {
+            picked = c;
+            break;
+        }
+    }
+
+    if (!picked) {
+        console.warn('   ⚠️  未找到 AdminPanel dist —— 产物将不含管理面板。');
+        console.warn('      请在 CI 先构建 Panel 仓库，或设置 ADMIN_PANEL_DIST_PATH');
+        return;
+    }
+
+    const dest = path.join(outputDir, 'AdminPanel');
+    await copyRecursive(picked.path, dest, []);
+    console.log(`   ✅ AdminPanel 已注入（来自 ${picked.source}）\n`);
+}
+
+/**
+ * 合并插件仓库到本体 Plugin/
+ *
+ * 本体 Plugin/ 只保留 9 个内置核心（README 定义）。
+ * 插件仓库 VCPtoolbox-Junior-Plugins 提供扩展插件。
+ *
+ * 查找顺序：env PLUGINS_REPO_PATH > ../VCPtoolbox-Junior-Plugins
+ */
+async function preparePlugins(outputDir) {
+    console.log('🔌 Merging extension plugins...');
+
+    const envPath = (process.env.PLUGINS_REPO_PATH || '').trim();
+    const pluginsRoot = envPath
+        ? path.resolve(envPath)
+        : path.resolve(ROOT, '..', 'VCPtoolbox-Junior-Plugins');
+
+    if (!fs.existsSync(pluginsRoot)) {
+        console.warn(`   ⚠️  未找到插件仓库: ${pluginsRoot}`);
+        console.warn('      产物仅含 9 个内置核心插件。');
+        return;
+    }
+
+    const destPluginDir = path.join(outputDir, 'Plugin');
+    fs.mkdirSync(destPluginDir, { recursive: true });
+
+    let merged = 0, skipped = 0;
+    for (const entry of fs.readdirSync(pluginsRoot)) {
+        const srcDir = path.join(pluginsRoot, entry);
+        const stat = fs.statSync(srcDir);
+        if (!stat.isDirectory()) continue;
+
+        const manifest = path.join(srcDir, 'plugin-manifest.json');
+        const manifestBlock = path.join(srcDir, 'plugin-manifest.json.block');
+        if (!fs.existsSync(manifest) && !fs.existsSync(manifestBlock)) continue;
+
+        const destDir = path.join(destPluginDir, entry);
+        if (fs.existsSync(destDir)) {
+            skipped++;
+            continue; // 本体同名保留（核心优先）
+        }
+
+        await copyRecursive(srcDir, destDir, [
+            'node_modules', '.git', '__pycache__', '.sqlite', 'VectorStore',
+            'state', 'cache', '.cache',
+        ]);
+        merged++;
+    }
+
+    console.log(`   ✅ 合并 ${merged} 个扩展插件（跳过 ${skipped} 个与本体同名）\n`);
+}
+
+/**
+ * 准备 data/ 目录骨架
+ * 预置 panel-registry.json 等 JSON，避免首次启动时 writeFile-style 端点 ENOENT
+ */
+async function prepareDataDir(outputDir) {
+    console.log('📂 Seeding data/ directory...');
+
+    const destData = path.join(outputDir, 'data');
+    fs.mkdirSync(destData, { recursive: true });
+
+    // 种子 JSON 文件：若本体 data/ 有就复制，没有就写空结构
+    const defaults = {
+        'panel-registry.json': JSON.stringify({
+            active: 'official',
+            panels: [{
+                id: 'official',
+                name: 'VCPtoolbox-Junior-Panel',
+                source: 'sibling repo',
+                description: '官方 Vue 3 管理面板',
+            }],
+        }, null, 2) + '\n',
+        'dashboardLayout.json': JSON.stringify({ cards: [] }, null, 2) + '\n',
+        'dashboard-bubbles.json': JSON.stringify([], null, 2) + '\n',
+    };
+
+    for (const file of DATA_SEED_FILES) {
+        const srcFile = path.join(ROOT, 'data', file);
+        const destFile = path.join(destData, file);
+        if (fs.existsSync(srcFile)) {
+            fs.copyFileSync(srcFile, destFile);
+        } else if (defaults[file]) {
+            fs.writeFileSync(destFile, defaults[file]);
+        }
+    }
+
+    // 预创建空子目录
+    for (const dir of DATA_SEED_DIRS) {
+        fs.mkdirSync(path.join(destData, dir), { recursive: true });
+        fs.writeFileSync(path.join(destData, dir, '.gitkeep'), '');
+    }
+
+    console.log(`   ✅ data/ 骨架已就绪\n`);
 }
 
 main().catch(err => {

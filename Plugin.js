@@ -38,6 +38,39 @@ class PluginManager extends EventEmitter {
         // TVS 变量注册表：插件通过 capabilities.tvsVariables 注入的变量
         // Map<pluginName, Array<{ key, filename, targetPath }>>
         this.pluginTvsRegistry = new Map();
+
+        // env 贡献注册表：插件通过 capabilities.envContributions 贡献的 config.env 字段
+        // Map<pluginName, Array<{ key, op, value, appliedValue, prevSnapshot }>>
+        // 持久化到 data/plugin-env-registry.json，支持重启后正确回滚
+        this.pluginEnvContribRegistry = new Map();
+        this._envRegistryPath = path.join(__dirname, 'data', 'plugin-env-registry.json');
+        this._configEnvPath = path.join(__dirname, 'config.env');
+        this._loadEnvRegistryFromDisk();
+    }
+
+    _loadEnvRegistryFromDisk() {
+        try {
+            if (fsSync.existsSync(this._envRegistryPath)) {
+                const raw = fsSync.readFileSync(this._envRegistryPath, 'utf8');
+                const obj = JSON.parse(raw);
+                for (const [name, arr] of Object.entries(obj || {})) {
+                    if (Array.isArray(arr)) this.pluginEnvContribRegistry.set(name, arr);
+                }
+            }
+        } catch (e) {
+            console.warn(`[PluginManager] [ENV] 加载 plugin-env-registry.json 失败: ${e.message}`);
+        }
+    }
+
+    async _persistEnvRegistry() {
+        try {
+            await fs.mkdir(path.dirname(this._envRegistryPath), { recursive: true });
+            const obj = {};
+            for (const [k, v] of this.pluginEnvContribRegistry.entries()) obj[k] = v;
+            await fs.writeFile(this._envRegistryPath, JSON.stringify(obj, null, 2), 'utf8');
+        } catch (e) {
+            console.warn(`[PluginManager] [ENV] 持久化 env 注册表失败: ${e.message}`);
+        }
     }
 
     setWebSocketServer(wss) {
@@ -584,6 +617,212 @@ class PluginManager extends EventEmitter {
         this.pluginTvsRegistry.delete(pluginName);
     }
 
+    /**
+     * 注册插件声明的 config.env 贡献（capabilities.envContributions）。
+     *
+     * 协议：
+     *   "envContributions": [
+     *     { "key": "IGNORE_FOLDERS", "op": "append-csv", "value": "VCP论坛" },
+     *     { "key": "SOME_FLAG", "op": "default", "value": "true" }
+     *   ]
+     *
+     * **op 类型**：
+     * - `append-csv` — 视为 CSV 列表（逗号分隔），将 value 追加到列表末尾，去重
+     * - `default`    — 仅当 config.env 中 key 不存在或为空时写入
+     *
+     * **幂等性**：重启后读取 pluginEnvContribRegistry，若已记录则跳过重复应用
+     *
+     * @param {object} manifest 插件 manifest（含 name）
+     */
+    async _registerPluginEnvContributions(manifest) {
+        const decls = manifest.capabilities?.envContributions;
+        if (!Array.isArray(decls) || decls.length === 0) return;
+
+        const pluginName = manifest.name;
+        const existing = this.pluginEnvContribRegistry.get(pluginName) || [];
+        const applied = [];
+
+        // 读一次当前 config.env 文本
+        let envText = '';
+        try {
+            if (fsSync.existsSync(this._configEnvPath)) {
+                envText = await fs.readFile(this._configEnvPath, 'utf8');
+            }
+        } catch (e) {
+            console.warn(`[PluginManager] [ENV] ${pluginName} 读 config.env 失败: ${e.message}`);
+            return;
+        }
+
+        let changed = false;
+        for (const decl of decls) {
+            const key = decl?.key;
+            const op = decl?.op || 'default';
+            const value = decl?.value;
+            if (!key || typeof key !== 'string' || value === undefined) {
+                console.warn(`[PluginManager] [ENV] ${pluginName} 声明非法 contribution: ${JSON.stringify(decl)}，跳过`);
+                continue;
+            }
+
+            // 幂等：若 registry 已记录同 key+op+value → 跳过
+            const already = existing.find(e => e.key === key && e.op === op && e.value === value);
+            if (already) {
+                applied.push(already);
+                continue;
+            }
+
+            const parsed = this._parseEnvKey(envText, key);
+            if (op === 'append-csv') {
+                const current = parsed ? parsed.value : '';
+                const list = current ? current.split(',').map(s => s.trim()).filter(Boolean) : [];
+                if (!list.includes(value)) {
+                    list.push(value);
+                    const newVal = list.join(',');
+                    envText = parsed
+                        ? this._replaceEnvLine(envText, parsed, newVal)
+                        : this._appendEnvLine(envText, key, newVal, `# appended by plugin ${pluginName}`);
+                    changed = true;
+                    applied.push({ key, op, value, appliedValue: value, prevSnapshot: current, description: decl.description });
+                    if (this.debugMode) {
+                        console.log(`[PluginManager] [ENV] ${pluginName} append-csv ${key}: + "${value}"`);
+                    }
+                } else {
+                    // 已在列表里，记录但不写文件
+                    applied.push({ key, op, value, appliedValue: value, prevSnapshot: current, alreadyPresent: true });
+                }
+            } else if (op === 'default') {
+                const current = parsed ? parsed.value : null;
+                if (current === null || current === '') {
+                    envText = parsed
+                        ? this._replaceEnvLine(envText, parsed, value)
+                        : this._appendEnvLine(envText, key, value, `# default by plugin ${pluginName}`);
+                    changed = true;
+                    applied.push({ key, op, value, appliedValue: value, prevSnapshot: current, description: decl.description });
+                    if (this.debugMode) {
+                        console.log(`[PluginManager] [ENV] ${pluginName} default ${key}="${value}"`);
+                    }
+                } else {
+                    // 用户已有值，不覆盖，但记录
+                    applied.push({ key, op, value, appliedValue: null, prevSnapshot: current, userAlreadySet: true });
+                }
+            } else {
+                console.warn(`[PluginManager] [ENV] ${pluginName}.${key}: 未知 op "${op}"，跳过`);
+            }
+        }
+
+        if (changed) {
+            await fs.writeFile(this._configEnvPath, envText, 'utf8');
+            // 同步 process.env（这样本次启动立即生效）
+            for (const a of applied) {
+                if (a.appliedValue !== null && a.appliedValue !== undefined) {
+                    if (a.op === 'append-csv') {
+                        process.env[a.key] = this._parseEnvKey(envText, a.key)?.value || '';
+                    } else {
+                        process.env[a.key] = a.appliedValue;
+                    }
+                }
+            }
+        }
+
+        if (applied.length > 0) {
+            this.pluginEnvContribRegistry.set(pluginName, applied);
+            await this._persistEnvRegistry();
+        }
+    }
+
+    /**
+     * 反注册插件的 env 贡献。
+     * - `append-csv`: 从 CSV 列表中移除 appliedValue（若当前 value 里还有），剩下的保留
+     * - `default`: 若当前 config.env 值仍等于 appliedValue → 删除该行；否则保留（用户改过）
+     *
+     * @param {string} pluginName
+     */
+    async _unregisterPluginEnvContributions(pluginName) {
+        const registered = this.pluginEnvContribRegistry.get(pluginName);
+        if (!registered || registered.length === 0) return;
+
+        let envText = '';
+        try {
+            if (fsSync.existsSync(this._configEnvPath)) {
+                envText = await fs.readFile(this._configEnvPath, 'utf8');
+            }
+        } catch (e) {
+            console.warn(`[PluginManager] [ENV] ${pluginName} 反注册读 config.env 失败: ${e.message}`);
+            return;
+        }
+
+        let changed = false;
+        for (const entry of registered) {
+            if (entry.alreadyPresent || entry.userAlreadySet) continue; // 没应用就无需回滚
+            const parsed = this._parseEnvKey(envText, entry.key);
+            if (!parsed) continue;
+
+            if (entry.op === 'append-csv') {
+                const list = parsed.value.split(',').map(s => s.trim()).filter(Boolean);
+                const idx = list.indexOf(entry.value);
+                if (idx >= 0) {
+                    list.splice(idx, 1);
+                    const newVal = list.join(',');
+                    envText = this._replaceEnvLine(envText, parsed, newVal);
+                    changed = true;
+                    if (this.debugMode) console.log(`[PluginManager] [ENV] ${pluginName} 回滚 append-csv ${entry.key}: - "${entry.value}"`);
+                }
+            } else if (entry.op === 'default') {
+                if (parsed.value === entry.appliedValue) {
+                    envText = this._deleteEnvLine(envText, parsed);
+                    changed = true;
+                    if (this.debugMode) console.log(`[PluginManager] [ENV] ${pluginName} 回滚 default ${entry.key}`);
+                }
+            }
+        }
+
+        if (changed) {
+            await fs.writeFile(this._configEnvPath, envText, 'utf8');
+        }
+        this.pluginEnvContribRegistry.delete(pluginName);
+        await this._persistEnvRegistry();
+    }
+
+    // —— env 文本工具 ——
+
+    /** 找到某 key 的行：{ lineIdx, key, value, rawLine, prefix, quote } 或 null */
+    _parseEnvKey(text, key) {
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(new RegExp(`^(\\s*)(${this._escapeRegExp(key)})(\\s*=\\s*)(["']?)(.*?)\\4\\s*$`));
+            if (m) {
+                return { lineIdx: i, key, prefix: m[1], sep: m[3], quote: m[4], value: m[5], rawLine: lines[i] };
+            }
+        }
+        return null;
+    }
+
+    _escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+    _replaceEnvLine(text, parsed, newValue) {
+        const lines = text.split(/\r?\n/);
+        const q = parsed.quote;
+        // 特殊字符自动加双引号
+        const needQuote = !q && /[\s#"']/.test(newValue);
+        const finalQ = needQuote ? '"' : q;
+        lines[parsed.lineIdx] = `${parsed.prefix}${parsed.key}${parsed.sep}${finalQ}${newValue}${finalQ}`;
+        return lines.join('\n');
+    }
+
+    _appendEnvLine(text, key, value, comment) {
+        const needQuote = /[\s#"']/.test(value);
+        const q = needQuote ? '"' : '';
+        const safe = value.replace(/"/g, '"');
+        let suffix = text.endsWith('\n') ? '' : '\n';
+        if (comment) suffix += comment + '\n';
+        return text + suffix + `${key}=${q}${safe}${q}\n`;
+    }
+
+    _deleteEnvLine(text, parsed) {
+        const lines = text.split(/\r?\n/);
+        lines.splice(parsed.lineIdx, 1);
+        return lines.join('\n');
+    }
+
     async loadPlugins() {
         console.log('[PluginManager] Starting plugin discovery...');
         // 1. 清理现有插件状态
@@ -622,6 +861,13 @@ class PluginManager extends EventEmitter {
             await this._unregisterPluginTvsVariables(name);
         }
 
+        // 反注册 env 贡献（仅本地插件）
+        const localEnvNames = Array.from(this.pluginEnvContribRegistry.keys())
+            .filter(n => !distributedPlugins.has(n));
+        for (const name of localEnvNames) {
+            await this._unregisterPluginEnvContributions(name);
+        }
+
         this.plugins = distributedPlugins; // 仅保留分布式插件，本地插件将被重新发现
         this.messagePreprocessors.clear();
         this.staticPlaceholderValues.clear();
@@ -657,6 +903,9 @@ class PluginManager extends EventEmitter {
 
                         // 注册插件声明的 TVS 变量（capabilities.tvsVariables）
                         await this._registerPluginTvsVariables(manifest);
+
+                        // 注册插件贡献的 config.env 字段（capabilities.envContributions）
+                        await this._registerPluginEnvContributions(manifest);
 
                         const isPreprocessor = manifest.pluginType === 'messagePreprocessor' || manifest.pluginType === 'hybridservice';
                         const isService = manifest.pluginType === 'service' || manifest.pluginType === 'hybridservice';
@@ -879,7 +1128,38 @@ class PluginManager extends EventEmitter {
         // 纯 messagePreprocessor 类：存在 messagePreprocessors
         const pre = this.messagePreprocessors.get(name);
         if (pre?.pluginAdminRouter) return pre.pluginAdminRouter;
+
+        // 🌟 synchronous 类插件 fallback：lazy-require 插件目录下的 admin-router.js
+        // 允许 stdio 子进程类插件也提供面板 API（如 VCPForum）
+        if (!this._pluginAdminRouterCache) this._pluginAdminRouterCache = new Map();
+        if (this._pluginAdminRouterCache.has(name)) {
+            return this._pluginAdminRouterCache.get(name);
+        }
+        const manifest = this.plugins.get(name);
+        if (manifest?.basePath) {
+            const adminRouterPath = path.join(manifest.basePath, 'admin-router.js');
+            if (fsSync.existsSync(adminRouterPath)) {
+                try {
+                    delete require.cache[require.resolve(adminRouterPath)];
+                    const mod = require(adminRouterPath);
+                    const router = (mod && typeof mod === 'function' && !mod.stack) ? mod({ manifest }) : mod;
+                    if (router) {
+                        this._pluginAdminRouterCache.set(name, router);
+                        if (this.debugMode) console.log(`[PluginManager] Lazy-loaded admin-router for ${name}`);
+                        return router;
+                    }
+                } catch (e) {
+                    console.warn(`[PluginManager] 加载 ${name}/admin-router.js 失败: ${e.message}`);
+                }
+            }
+        }
+        this._pluginAdminRouterCache.set(name, null);
         return null;
+    }
+
+    /** 清缓存（重载/卸载插件时调用） */
+    _clearPluginAdminRouterCache(name) {
+        if (this._pluginAdminRouterCache) this._pluginAdminRouterCache.delete(name);
     }
 
     // 新增：获取 VCPLog 插件的推送函数，供其他插件依赖注入

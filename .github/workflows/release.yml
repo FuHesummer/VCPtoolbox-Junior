@@ -40,7 +40,24 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: main
+
+      - name: Checkout Panel repo
+        uses: actions/checkout@v4
+        with:
+          repository: FuHesummer/VCPtoolbox-Junior-Panel
+          ref: main
+          path: panel
+
+      - name: Checkout Plugins repo
+        uses: actions/checkout@v4
+        with:
+          repository: FuHesummer/VCPtoolbox-Junior-Plugins
+          ref: main
+          path: plugins
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -50,23 +67,37 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
+      - name: Build Panel (Vue 3 dist)
+        working-directory: panel
+        run: |
+          npm ci
+          npm run build
+          ls -la dist
+
+      - name: Install main dependencies
+        working-directory: main
         run: npm ci
 
       - name: Build rust-vexus-lite
-        working-directory: rust-vexus-lite
+        working-directory: main/rust-vexus-lite
         run: |
           npm install
           npm run build
 
       - name: Bundle with esbuild
+        working-directory: main
         run: npm run bundle
 
       - name: Build SEA package
+        working-directory: main
+        env:
+          ADMIN_PANEL_DIST_PATH: ${{ github.workspace }}/panel/dist
+          PLUGINS_REPO_PATH: ${{ github.workspace }}/plugins
         run: node build/package-sea.js ${{ matrix.platform }} ${{ matrix.arch }}
 
       - name: Smoke test
         shell: bash
+        working-directory: main
         run: |
           PKG="dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}"
           EXE="$PKG/${{ matrix.exe }}"
@@ -91,25 +122,42 @@ jobs:
 
           "./${{ matrix.exe }}" > startup.log 2>&1 &
           PID=$!
-          sleep 12
+          sleep 15
           kill $PID 2>/dev/null || true
-          sleep 1
-          kill -9 $PID 2>/dev/null || true
 
+          # 主服务启动验收
           if grep -q "监听端口\|listening\|Plugin discovery\|正在监听" startup.log; then
-            echo "✅ Smoke test passed"
+            echo "✅ Main server started"
           else
             echo "❌ Startup failed"
             cat startup.log
+            kill -9 $PID 2>/dev/null || true
             exit 1
           fi
+
+          # AdminPanel 可达性验收（curl 首页 200 + 含 VCP 字样）
+          HTTP_CODE=$(curl -o /tmp/panel.html -s -w '%{http_code}' http://localhost:20000/AdminPanel/ || echo "000")
+          if [ "$HTTP_CODE" = "200" ] && grep -q "VCP\|vcp" /tmp/panel.html 2>/dev/null; then
+            echo "✅ AdminPanel 可访问 (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  AdminPanel 可达性检查失败 (HTTP $HTTP_CODE)"
+            echo "--- panel.html head ---"
+            head -20 /tmp/panel.html 2>/dev/null || echo "(no response)"
+            echo "--- startup.log tail ---"
+            tail -30 startup.log
+            kill -9 $PID 2>/dev/null || true
+            exit 1
+          fi
+
+          kill -9 $PID 2>/dev/null || true
+          sleep 1
           cd -
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}.*
+          path: main/dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}.*
           if-no-files-found: error
 
   release:

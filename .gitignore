@@ -240,22 +240,35 @@ scripts/sync-panel.js
 /data/maintenance-history.json
 /data/maintenance-logs/
 
+# 服务运行时日志 / 上游迁移产物 / 插件 env 协议注册表
+/data/server-runtime.log
+/data/adminserver-runtime.log
+/data/migration-backup/
+/data/migration-history.json
+/data/plugin-env-registry.json
+
+# config.env sync-env 脚本运行时残留
+/config.env.new
+
 # 插件 npm install 产物（插件仓库协议不要求 commit lock）
 Plugin/*/package-lock.json
 
 # ==== Plugin/ 核心插件白名单 ====
 # 通过 PluginStore 从云商店安装的插件属于运行时数据，不纳入主仓库
-# 只保留 Junior 本体核心的 11 个插件（新增核心插件时加到下方 !Plugin/xxx/）
+# 只保留 Junior 本体核心的 9 个插件（新增核心插件时加到下方 !Plugin/xxx/）
+# DailyHot / ToolBoxFoldMemo 已移到插件仓库 VCPtoolbox-Junior-Plugins
+# VCPForum 已彻底解耦（admin-router + native panel + envContributions），从仓库装
 Plugin/*/
 !Plugin/ContextFoldingV2/
-!Plugin/DailyHot/
 !Plugin/DailyNote/
 !Plugin/DailyNoteManager/
 !Plugin/DailyNotePanel/
 !Plugin/DailyNoteWrite/
 !Plugin/LightMemo/
 !Plugin/RAGDiaryPlugin/
-!Plugin/ToolBoxFoldMemo/
 !Plugin/UserAuth/
 !Plugin/VCPLog/
 !Plugin/CLAUDE.md
+
+# 迁移功能临时测试
+.tmp-test/

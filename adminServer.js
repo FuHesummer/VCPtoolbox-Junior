@@ -331,6 +331,7 @@ const localAdminModules = {
     dashboardLayout:   require('./routes/admin/dashboardLayout'),
     panelRegistry:     require('./routes/admin/panelRegistry'),
     sarPrompts:        require('./routes/admin/sarPrompts'),
+    migration:         require('./routes/admin/migration'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {
