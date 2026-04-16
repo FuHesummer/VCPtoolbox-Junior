@@ -85,6 +85,13 @@ COPY --from=build /usr/src/app/rust-vexus-lite ./rust-vexus-lite
 COPY --from=build /usr/src/app/pydeps ./pydeps
 
 # --- Copy application resources ---
+# ⚠️ AdminPanel 解耦到独立仓库（VCPtoolbox-Junior-Panel）后，本体 repo 根目录
+# 不含 AdminPanel/；CI 构建时由 release.yml 的 docker job 先 clone + build panel，
+# 再 cp panel/dist → main/AdminPanel 后才进入 docker build context。
+# 本地手工 docker build 前请执行：
+#   git clone https://github.com/FuHesummer/VCPtoolbox-Junior-Panel.git ../panel
+#   (cd ../panel && npm ci && npm run build)
+#   cp -r ../panel/dist ./AdminPanel
 COPY --from=build /usr/src/app/AdminPanel ./AdminPanel
 COPY --from=build /usr/src/app/Agent ./Agent
 COPY --from=build /usr/src/app/Plugin ./Plugin

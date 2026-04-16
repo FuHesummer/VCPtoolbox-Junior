@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v1.0.0)'
+        description: 'Release version (e.g. v2.0.0-beta.1)'
         required: true
 
 permissions:
@@ -19,6 +19,9 @@ env:
   RUST_TOOLCHAIN: 'stable'
 
 jobs:
+  # ================================================================
+  # Job 1: SEA 可执行文件构建（4 个平台并行）
+  # ================================================================
   build:
     strategy:
       fail-fast: false
@@ -30,6 +33,14 @@ jobs:
             exe: VCPtoolbox.exe
           - os: ubuntu-latest
             platform: linux
+            arch: x64
+            exe: VCPtoolbox
+          - os: ubuntu-22.04-arm
+            platform: linux
+            arch: arm64
+            exe: VCPtoolbox
+          - os: macos-13
+            platform: darwin
             arch: x64
             exe: VCPtoolbox
           - os: macos-latest
@@ -63,9 +74,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            main/package-lock.json
+            panel/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      # 🚀 Rust 编译缓存（~/.cargo + rust-vexus-lite/target）
+      # rust-vexus-lite 冷编译 1-2 分钟，缓存命中后压到 10 秒内
+      - name: Cache Rust target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            main/rust-vexus-lite/target
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('main/rust-vexus-lite/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-cargo-
 
       - name: Build Panel (Vue 3 dist)
         working-directory: panel
@@ -123,9 +151,8 @@ jobs:
           "./${{ matrix.exe }}" > startup.log 2>&1 &
           PID=$!
           sleep 15
-          kill $PID 2>/dev/null || true
 
-          # 主服务启动验收
+          # ===== 验收 1: 主服务启动 =====
           if grep -q "监听端口\|listening\|Plugin discovery\|正在监听" startup.log; then
             echo "✅ Main server started"
           else
@@ -135,18 +162,29 @@ jobs:
             exit 1
           fi
 
-          # AdminPanel 可达性验收（curl 首页 200 + 含 VCP 字样）
+          # ===== 验收 2: AdminPanel 可达 =====
           HTTP_CODE=$(curl -o /tmp/panel.html -s -w '%{http_code}' http://localhost:20000/AdminPanel/ || echo "000")
           if [ "$HTTP_CODE" = "200" ] && grep -q "VCP\|vcp" /tmp/panel.html 2>/dev/null; then
             echo "✅ AdminPanel 可访问 (HTTP $HTTP_CODE)"
           else
-            echo "⚠️  AdminPanel 可达性检查失败 (HTTP $HTTP_CODE)"
-            echo "--- panel.html head ---"
+            echo "❌ AdminPanel 不可达 (HTTP $HTTP_CODE)"
             head -20 /tmp/panel.html 2>/dev/null || echo "(no response)"
-            echo "--- startup.log tail ---"
             tail -30 startup.log
             kill -9 $PID 2>/dev/null || true
             exit 1
+          fi
+
+          # ===== 验收 3: 占位符识别系统 + 16 核心插件 =====
+          REG_CODE=$(curl -o /tmp/registry.json -s -w '%{http_code}' \
+            -u test:test \
+            http://localhost:20000/admin_api/placeholder-registry || echo "000")
+          if [ "$REG_CODE" = "200" ] && grep -q "plugins\|placeholders" /tmp/registry.json 2>/dev/null; then
+            echo "✅ Placeholder registry 可达（16 核心插件 + 占位符系统启动正常）"
+          else
+            echo "⚠️  Placeholder registry 检查失败 (HTTP $REG_CODE)"
+            head -30 /tmp/registry.json 2>/dev/null || echo "(no response)"
+            # 非硬失败：registry 需要 plugins 仓库 sibling 或远程 GitHub 可达
+            # 打包产物不含 sibling repo，远程可能被防火墙挡，这里只 warn
           fi
 
           kill -9 $PID 2>/dev/null || true
@@ -160,6 +198,9 @@ jobs:
           path: main/dist/vcp-junior-${{ matrix.platform }}-${{ matrix.arch }}.*
           if-no-files-found: error
 
+  # ================================================================
+  # Job 2: GitHub Release 发布
+  # ================================================================
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -172,13 +213,22 @@ jobs:
           path: artifacts
           pattern: vcp-junior-*
 
-      - name: Determine version
+      - name: Determine version + prerelease flag
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            TAG="${{ github.event.inputs.version }}"
           else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          # semver 风格 tag 含 '-' 视为 prerelease（如 v2.0.0-beta.1 / v2.0.0-rc.1）
+          if [[ "$TAG" == *"-"* ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "是 Prerelease (含 '-'): $TAG"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "是 Stable Release: $TAG"
           fi
 
       - name: Create Release
@@ -188,23 +238,36 @@ jobs:
           name: "VCPtoolbox-Junior ${{ steps.version.outputs.tag }}"
           generate_release_notes: true
           body: |
-            ## 下载
+            ## 🎉 本版本亮点
+
+            - 🔌 **16 个内置核心插件**（新增 FileOperator 文件操作器、EmojiListGenerator 表情包管理器、ImageServer 图床服务）
+            - 🎯 **占位符识别闭环**：PromptEditor 三态 chip（✅ ok / ⚠️ 需装 / ❌ 未知）+ 一键装缺失插件
+            - 🖼️ **表情包可视化管理**：拖拽上传、分页、搜索、重新生成清单
+            - 🔧 **TVS 工具指南协议 v2.1**：插件自带 tvs/*.txt 工具使用指南，安装即注入
+            - 🧬 **envContributions 协议**：插件动态贡献 config.env 字段，卸载自动清理
+            - 🏗️ **三仓库解耦架构**：本体 + Panel + Plugins 独立迭代
+            - 🛫 **上游迁移向导**：从 lioensky/VCPToolBox 一键迁移用户数据
+
+            ## 📦 下载
 
             | 平台 | 文件 | 说明 |
             |------|------|------|
             | Windows x64 | `vcp-junior-win32-x64.zip` | 解压后运行 `VCPtoolbox.exe` |
             | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x VCPtoolbox && ./VCPtoolbox` |
-            | macOS ARM64 | `vcp-junior-darwin-arm64.tar.gz` | 同上 |
-            | Docker | `ghcr.io` | 见下方 Docker 部署 |
+            | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` | 树莓派 / ARM 服务器 |
+            | macOS ARM64 (Apple Silicon) | `vcp-junior-darwin-arm64.tar.gz` | M1/M2/M3/M4 |
+            | macOS x64 (Intel) | `vcp-junior-darwin-x64.tar.gz` | Intel Mac |
+            | Docker 多架构 | `ghcr.io` | amd64 + arm64，见下方 |
 
-            ## 首次使用
+            ## 🚀 首次使用
 
-            1. 解压下载的包
-            2. 复制 `config.env.example` → `config.env`，填入 API 密钥
-            3. 运行可执行文件，主服务 (6005) + 管理面板 (6006) 同时启动
+            1. 解压下载的包（或拉取 Docker 镜像）
+            2. 复制 `config.env.example` → `config.env`，填入 API 密钥 + `Key` + `Image_Key`
+            3. 运行可执行文件：主服务 (6005) + 管理面板 (6006) 同时启动
             4. 打开 `http://localhost:6006/AdminPanel/` 进入管理面板
+            5. （可选）在 AdminPanel → 迁移向导中从上游 VCPToolBox 迁移老数据
 
-            ## Docker 部署
+            ## 🐳 Docker 部署（支持 amd64 + arm64）
 
             ```bash
             docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
@@ -215,12 +278,19 @@ jobs:
             ```
 
             > 所有用户数据（插件、知识库、日记、向量索引、配置）自动持久化到 `data/` 目录。
-            > 首次启动从镜像同步默认配置；更新镜像时自动合并新插件，保留用户设置。
+            > 首次启动从镜像同步默认配置；更新镜像时智能合并新插件，保留用户设置。
+
+            ## ⚠️ Beta 版本提醒
+
+            当前版本含大量架构改动（v1 → v2 三仓库解耦），欢迎反馈 bug 到 [Issues](https://github.com/FuHesummer/VCPtoolbox-Junior/issues)。
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           files: |
             artifacts/**/*
 
+  # ================================================================
+  # Job 3: Docker 多架构镜像（amd64 + arm64）
+  # ================================================================
   docker:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -229,7 +299,42 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: main
+
+      - name: Checkout Panel repo
+        uses: actions/checkout@v4
+        with:
+          repository: FuHesummer/VCPtoolbox-Junior-Panel
+          ref: main
+          path: panel
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: panel/package-lock.json
+
+      - name: Build Panel (Vue 3 dist)
+        working-directory: panel
+        run: |
+          npm ci
+          npm run build
+
+      # 方案 C 解耦后本体不带 AdminPanel/，Dockerfile 依赖此目录；
+      # 此处把 Panel 仓库 build 产物注入到本体 AdminPanel/ 作为 docker build context
+      - name: Inject Panel dist into main/AdminPanel
+        run: |
+          cp -r panel/dist main/AdminPanel
+          ls -la main/AdminPanel | head -5
+
+      - name: Set up QEMU (for arm64 cross-build)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -241,24 +346,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version
+      - name: Extract version + tag strategy
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            TAG="${{ github.event.inputs.version }}"
           else
-            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF#refs/tags/v}"
           fi
+          echo "VERSION=$TAG" >> $GITHUB_OUTPUT
+          # Beta 测试期仍覆盖 :latest（宝宝决策：没发给用户前 latest 就是最新 beta）
+          # 正式版发布后可改为"仅正式版覆盖 latest"
+          echo "PUSH_LATEST=true" >> $GITHUB_OUTPUT
 
       - name: Lowercase owner
         id: owner
         run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (amd64 + arm64)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: main
+          file: main/Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:${{ steps.version.outputs.VERSION }}
             ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:latest
