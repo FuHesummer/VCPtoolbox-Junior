@@ -1,10 +1,10 @@
 # Commit Decision History
 
-> 此文件是 commits.jsonl 的人类可读视图，可由工具重生成。
-> Canonical store: commits.jsonl (JSONL, append-only)
+> 此文件是 `commits.jsonl` 的人类可读视图，可由工具重生成。
+> Canonical store: `commits.jsonl` (JSONL, append-only)
 
-| Date | Context-Id | Commit | Summary | Dec | Bug | Risk |
-|------|-----------|--------|---------|-----|-----|------|
+| Date | Context-Id | Commit | Summary | Decisions | Bugs | Risk |
+|------|-----------|--------|---------|-----------|------|------|
 | 2026-04-14 | 019d89fc | 5dc10f1 | fix: 移除 Plugin.js 与 maintain.js spawn 的 DEP0190 废弃警告 | 1 | 1 | med |
 | 2026-04-14 | 019d89fc | 76c045a | feat(notebook): agent_map 旧格式自动扫描 Agent/<name>/ 物理子目录 | 1 | 1 | med |
 | 2026-04-14 | 019d89fc | 418688d | fix(adminpanel): 笔记文件夹多级路径 encode + 404 显示暂无日记 | 1 | 1 | med |
@@ -17,9 +17,12 @@
 | 2026-04-14 | 019d8ac1 | — | chore(scripts): AdminPanel-Vue 源码同步脚本 | 1 | 0 | low |
 | 2026-04-14 | e3a38d35 | — | feat(panel): AdminPanel Vue 多页面表单化重构 + 数据/UI/协议 bug 修复 | 11 | 14 | high |
 | 2026-04-14 | 019d8ba0 | — | feat(panel): Toolbox/TVS/Notes/NewAPI 深度重构 + 后端多维聚合 | 12 | 6 | high |
-| 2026-04-14 | 019d8c20 | — | feat(plugin-protocol): 插件 admin 协议 v2.0 + 4 大页面深度增强 + FoldingStore 修复 | 5 | 1 | high |
-| 2026-04-14 | 019d8c98 | — | feat(plugin-protocol): TVS 工具指南协议 v2.1（tvsVariables，move 策略） | 5 | 1 | med |
-| 2026-04-15 | 019d8fec | — | fix(plugin-protocol): PluginNavView 组件缓存 + TVS 协议保留种子 + 白名单隔离云插件 | 4 | 3 | med |
-| 2026-04-15 | 019d94e1 | f6765a1 | feat(arch): 解耦面板仓库 + ADMIN_PANEL_SOURCE 生态化 + 3 新页面（运维/模型提示词/panel-registry）| 12 | 2 | high |
-| 2026-04-15 | 019d94e2 | 1ca19e4 | feat(plugins-repo): 插件面板迭代（可视化编辑器 + dashboardCards + 三件套修复，跨 6 插件）| 6 | 1 | med |
-| 2026-04-15 | 019d94e3 | 93d59b8 | feat(panel-repo): 模型提示词页面（SarModel/SarPrompt 可视化 chip 编辑） | 3 | 0 | low |
+| 2026-04-14 | 019d8c20 | PENDING | feat(plugin-protocol): 插件 admin 协议 v2.0 + 4 大页面深度增强 + FoldingStore 修复 | 5 | 1 | high |
+| 2026-04-14 | 019d8c98 | — | feat(plugin-protocol): TVS 工具指南协议 v2.1（tvsVariables，move 策略） | 5 | 1 | high |
+| 2026-04-15 | 019d8fec | — | fix(plugin-protocol): PluginNavView 组件缓存 + TVS 协议保留种子 + 白名单隔离云插件 | 4 | 3 | high |
+| 2026-04-15 | 019d94e1 | f6765a1 | feat(arch): 解耦面板仓库 + ADMIN_PANEL_SOURCE 生态化 + 3 新页面 | 5 | 2 | high |
+| 2026-04-15 | 019d94e2 | 1ca19e4 | feat: 插件面板迭代（可视化编辑器 + dashboardCards + 三件套修复） | 3 | 1 | med |
+| 2026-04-15 | 019d94e3 | 93d59b8 | feat(views): 模型提示词页面（SarModel/SarPrompt 可视化） | 2 | 0 | low |
+| 2026-04-16 | 019d019d | cdfdf6b | feat(arch): 论坛解耦 + envContributions 协议 + 上游 VCPToolBox 一键迁移 | 5 | 1 | high |
+| 2026-04-16 | 019d019d | 8bf93cb | feat(views): 上游迁移向导 + PromptEditor 智能化 + 配置/变量编辑器重构 | 6 | 2 | high |
+| 2026-04-16 | 019d019d | 77f8314 | feat(VCPForum): 完全解耦本体（admin-router + native panel + envContributions） | 3 | 1 | med |
