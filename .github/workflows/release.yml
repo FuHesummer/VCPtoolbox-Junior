@@ -63,12 +63,8 @@ jobs:
           ref: main
           path: panel
 
-      - name: Checkout Plugins repo
-        uses: actions/checkout@v4
-        with:
-          repository: FuHesummer/VCPtoolbox-Junior-Plugins
-          ref: main
-          path: plugins
+      # 注：不 clone Plugins 仓库 —— 产物只含本体 16 核心，
+      # 扩展插件由用户通过 AdminPanel 商店从 GitHub 按需下载（pluginStore.js）
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -120,7 +116,6 @@ jobs:
         working-directory: main
         env:
           ADMIN_PANEL_DIST_PATH: ${{ github.workspace }}/panel/dist
-          PLUGINS_REPO_PATH: ${{ github.workspace }}/plugins
         run: node build/package-sea.js ${{ matrix.platform }} ${{ matrix.arch }}
 
       - name: Smoke test
@@ -265,7 +260,12 @@ jobs:
             2. 复制 `config.env.example` → `config.env`，填入 API 密钥 + `Key` + `Image_Key`
             3. 运行可执行文件：主服务 (6005) + 管理面板 (6006) 同时启动
             4. 打开 `http://localhost:6006/AdminPanel/` 进入管理面板
-            5. （可选）在 AdminPanel → 迁移向导中从上游 VCPToolBox 迁移老数据
+            5. **装扩展插件**：在 AdminPanel → **插件商店** 从 GitHub 仓库按需下载安装
+               （如 WeatherReporter 天气、TavilySearch 搜索、ComfyUIGen 绘图、VCPForum 论坛等）
+            6. （可选）在 AdminPanel → 迁移向导从上游 VCPToolBox 迁移老数据
+
+            > **本体开箱即用 16 核心插件**（文件操作、日记系统、RAG 语义检索、占位符识别、
+            > 表情包管理、图床、向量索引等），其余都通过商店按需扩展，保持包体积精简。
 
             ## 🐳 Docker 部署（支持 amd64 + arm64）
 

@@ -242,8 +242,9 @@ async function main() {
     // AdminPanel（方案 C 解耦后从独立仓库注入）
     await prepareAdminPanel(outputDir);
 
-    // Plugins（合并插件仓库的扩展插件到本体 Plugin/）
-    await preparePlugins(outputDir);
+    // Plugins：产物只含本体 16 核心，扩展插件由用户通过 AdminPanel 插件商店
+    // 从 GitHub 仓库（VCPtoolbox-Junior-Plugins）按需安装（pluginStore.js 协议）。
+    // 不合并扩展插件进产物 — 避免与商店心智模型冲突、保持包体积精简。
 
     // data/ 骨架（预置 panel-registry.json 等避免首启 ENOENT）
     await prepareDataDir(outputDir);
@@ -479,57 +480,9 @@ async function prepareAdminPanel(outputDir) {
     console.log(`   ✅ AdminPanel 已注入（来自 ${picked.source}）\n`);
 }
 
-/**
- * 合并插件仓库到本体 Plugin/
- *
- * 本体 Plugin/ 只保留 16 个内置核心（README 定义）。
- * 插件仓库 VCPtoolbox-Junior-Plugins 提供扩展插件。
- *
- * 查找顺序：env PLUGINS_REPO_PATH > ../VCPtoolbox-Junior-Plugins
- * 同名冲突策略：本体核心优先，仓库同名插件跳过（见下方 skipped 分支）
- */
-async function preparePlugins(outputDir) {
-    console.log('🔌 Merging extension plugins...');
-
-    const envPath = (process.env.PLUGINS_REPO_PATH || '').trim();
-    const pluginsRoot = envPath
-        ? path.resolve(envPath)
-        : path.resolve(ROOT, '..', 'VCPtoolbox-Junior-Plugins');
-
-    if (!fs.existsSync(pluginsRoot)) {
-        console.warn(`   ⚠️  未找到插件仓库: ${pluginsRoot}`);
-        console.warn('      产物仅含 16 个内置核心插件。');
-        return;
-    }
-
-    const destPluginDir = path.join(outputDir, 'Plugin');
-    fs.mkdirSync(destPluginDir, { recursive: true });
-
-    let merged = 0, skipped = 0;
-    for (const entry of fs.readdirSync(pluginsRoot)) {
-        const srcDir = path.join(pluginsRoot, entry);
-        const stat = fs.statSync(srcDir);
-        if (!stat.isDirectory()) continue;
-
-        const manifest = path.join(srcDir, 'plugin-manifest.json');
-        const manifestBlock = path.join(srcDir, 'plugin-manifest.json.block');
-        if (!fs.existsSync(manifest) && !fs.existsSync(manifestBlock)) continue;
-
-        const destDir = path.join(destPluginDir, entry);
-        if (fs.existsSync(destDir)) {
-            skipped++;
-            continue; // 本体同名保留（核心优先）
-        }
-
-        await copyRecursive(srcDir, destDir, [
-            'node_modules', '.git', '__pycache__', '.sqlite', 'VectorStore',
-            'state', 'cache', '.cache',
-        ]);
-        merged++;
-    }
-
-    console.log(`   ✅ 合并 ${merged} 个扩展插件（跳过 ${skipped} 个与本体同名）\n`);
-}
+// 注：历史版本曾有 preparePlugins() 函数把插件仓库合并进产物。
+// 已废弃 — 违反「本体 16 核心 + AdminPanel 商店按需扩展」架构（pluginStore.js 协议）。
+// 用户首次启动后通过 AdminPanel 插件商店从 GitHub 下载需要的扩展插件。
 
 /**
  * 准备 data/ 目录骨架

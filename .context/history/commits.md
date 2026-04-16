@@ -31,4 +31,5 @@
 | 2026-04-16 | 019d9639 | c7a743c | ✨ feat(arch): 占位符识别闭环 + 15 核心 + 时序/解析双 bug + Agent 预设清理 | 6 | 3 | high |
 | 2026-04-16 | 019d964f | e4b73cf | ✨ feat(config): FileOperator 配置迁入全局 + 使用指南注释 | 3 | 0 | low |
 | 2026-04-16 | 019d9652 | df991b2 | ✨ feat(plugin): FileOperator 加入内置核心（15→16）+ 配置迁全局 + 使用指南 | 3 | 0 | med |
-| 2026-04-16 | 019d9660 | PENDING | 👷 ci(release): 5 平台 + ARM64 + Docker 多架构 + Rust 缓存 + placeholder smoke | 6 | 0 | high |
+| 2026-04-16 | 019d9660 | cfd9d4b | 👷 ci(release): 5 平台 + ARM64 + Docker 多架构 + Rust 缓存 + placeholder smoke | 6 | 0 | high |
+| 2026-04-16 | 019d967d | PENDING | 🐛 fix(lifecycle+arch): 孤儿进程清理 + 打包守 16 核心边界 | 3 | 2 | high |

@@ -46,6 +46,56 @@ class PluginManager extends EventEmitter {
         this._envRegistryPath = path.join(__dirname, 'data', 'plugin-env-registry.json');
         this._configEnvPath = path.join(__dirname, 'config.env');
         this._loadEnvRegistryFromDisk();
+
+        // 子进程追踪：所有 spawn 的 stdio 插件子进程（Python/Node/Rust etc.）
+        // 关闭服务时必须显式 kill，否则 Windows 父进程退出后子进程变孤儿（持有文件 handle + 端口）
+        // Set<ChildProcess>；每个 cp 在 exit/error 事件触发时自动从 Set 移除
+        this._childProcesses = new Set();
+    }
+
+    /**
+     * 追踪 spawn 出来的子进程，用于服务关闭时统一清理。
+     * 子进程 exit/error 时自动从 Set 移除，避免内存泄漏。
+     */
+    _trackChildProcess(cp) {
+        if (!cp || !cp.pid) return;
+        this._childProcesses.add(cp);
+        const cleanup = () => this._childProcesses.delete(cp);
+        cp.once('exit', cleanup);
+        cp.once('error', cleanup);
+    }
+
+    /**
+     * 服务关闭时杀掉所有仍存活的子进程（连带它们的子进程树）。
+     *
+     * Windows: taskkill /F /T /PID — /T 强制结束进程树（所有后代）
+     * Unix:   process.kill(-pgid, 'SIGKILL') — 进程组信号（需 spawn 时 detached: true）
+     *         回退到 cp.kill('SIGKILL') 至少杀直接子进程
+     *
+     * 被 graceful shutdown + 异常 exit handler 双重调用，幂等。
+     */
+    killAllChildProcesses() {
+        if (this._childProcesses.size === 0) return;
+        const { execSync } = require('child_process');
+        const isWin = process.platform === 'win32';
+        const pids = [...this._childProcesses].map(cp => cp.pid).filter(Boolean);
+
+        console.log(`[PluginManager] 清理 ${pids.length} 个残留子进程...`);
+        for (const pid of pids) {
+            try {
+                if (isWin) {
+                    // /F 强杀 + /T 进程树（连带孙进程）
+                    execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 3000 });
+                } else {
+                    // Unix: 先 SIGTERM 给机会，再 SIGKILL
+                    try { process.kill(-pid, 'SIGKILL'); } catch { /* 非进程组成员 */ }
+                    try { process.kill(pid, 'SIGKILL'); } catch {}
+                }
+            } catch (e) {
+                // 进程可能已 exit，ignore
+            }
+        }
+        this._childProcesses.clear();
     }
 
     _loadEnvRegistryFromDisk() {
@@ -177,6 +227,7 @@ class PluginManager extends EventEmitter {
 
             // 用完整命令字符串 + shell:true，避免 DEP0190（args 数组与 shell:true 并用会触发废弃警告）
             const pluginProcess = spawn(plugin.entryPoint.command, { cwd: plugin.basePath, shell: true, env: envForProcess, windowsHide: true });
+            this._trackChildProcess(pluginProcess);
             let output = '';
             let errorOutput = '';
             let processExited = false;
@@ -348,6 +399,7 @@ class PluginManager extends EventEmitter {
                     // 移除 shell: true
                     windowsHide: true
                 });
+                this._trackChildProcess(prewarmProcess);
 
                 prewarmProcess.on('error', (err) => {
                     console.warn(`[PluginManager] Python pre-warming process failed to start. Is Python installed and in the system's PATH? Error: ${err.message}`);
@@ -1773,6 +1825,7 @@ class PluginManager extends EventEmitter {
 
             // 用完整命令字符串 + shell:true，避免 DEP0190（args 数组与 shell:true 并用会触发废弃警告）
             const pluginProcess = spawn(plugin.entryPoint.command, { cwd: plugin.basePath, shell: true, env: finalEnv, windowsHide: true });
+            this._trackChildProcess(pluginProcess);
 
 
             let outputBuffer = ''; // Buffer to accumulate data chunks

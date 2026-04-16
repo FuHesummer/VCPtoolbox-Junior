@@ -1341,6 +1341,8 @@ async function gracefulShutdown(exitCode = 0) {
     }
     if (pluginManager) {
         await pluginManager.shutdownAllPlugins();
+        // 杀掉所有 spawn 的子进程（Python/Node 插件）；避免 Windows 父进程死后孤儿
+        pluginManager.killAllChildProcesses();
     }
 
     if (knowledgeBaseManager) {
@@ -1365,6 +1367,12 @@ async function gracefulShutdown(exitCode = 0) {
 
 process.on('SIGINT', () => gracefulShutdown(0));
 process.on('SIGTERM', () => gracefulShutdown(0));
+// Windows 关闭控制台窗口（CTRL_CLOSE_EVENT）映射到 SIGHUP；Ctrl+Break → SIGBREAK
+// 给我们最多 ~5 秒清理时间（Windows 硬限制），所以 killAllChildProcesses 要快
+process.on('SIGHUP', () => gracefulShutdown(0));
+if (process.platform === 'win32') {
+    process.on('SIGBREAK', () => gracefulShutdown(0));
+}
 
 // 新增：捕获未处理的异常，防止服务器崩溃
 process.on('uncaughtException', (error) => {
@@ -1407,6 +1415,11 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Ensure log stream is flushed on uncaught exceptions or synchronous exit, though less reliable
 process.on('exit', (code) => {
+    // 最终防线：同步 kill 所有残留子进程（gracefulShutdown 可能没跑完就被强杀）
+    // Windows: taskkill /F /T 连带后代；本进程已经在 exit，不会影响自己
+    if (pluginManager && typeof pluginManager.killAllChildProcesses === 'function') {
+        try { pluginManager.killAllChildProcesses(); } catch { /* exit 阶段吞错 */ }
+    }
     logger.originalConsoleLog(`[Server] Exiting with code ${code}.`);
     const serverLogWriteStream = logger.getLogWriteStream();
     const currentServerLogPath = logger.getServerLogPath();
