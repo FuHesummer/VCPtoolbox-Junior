@@ -1,0 +1,27 @@
+{
+  "manifestVersion": "1.0.0",
+  "name": "EmojiListGenerator",
+  "version": "1.1.0",
+  "displayName": "表情包管理器",
+  "description": "扫描项目 image/*表情包/ 目录生成 {{XXX表情包}} 占位符清单；配套 AdminPanel 可视化管理页面支持上传/删除/新建/重新生成。",
+  "author": "Junior",
+  "pluginType": "static",
+  "entryPoint": {
+    "type": "nodejs",
+    "command": "node emoji-list-generator.js"
+  },
+  "communication": {
+    "protocol": "stdio",
+    "timeout": 15000
+  },
+  "capabilities": {},
+  "adminNav": {
+    "title": "表情包管理",
+    "icon": "emoji_emotions",
+    "type": "native"
+  },
+  "configSchema": {
+    "DebugMode": "boolean"
+  },
+  "lifecycle": {}
+}

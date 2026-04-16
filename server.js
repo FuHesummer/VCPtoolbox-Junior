@@ -1228,6 +1228,10 @@ async function initialize() {
     console.log('开始初始化静态插件...');
     await pluginManager.initializeStaticPlugins();
     console.log('静态插件初始化完成。'); // Keep
+    // 🕐 等待 static 插件首次更新完成（EmojiListGenerator 等需要先生成产物再被下方读取）
+    // 不等的话首次启动时 generated_lists/ 是空的，cachedEmojiLists Map 会是空的，
+    // {{Xxx表情包}} 占位符首次启动不生效（需二次重启才恢复）— 这是历史坑
+    await pluginManager.waitForStaticFirstUpdates();
     await pluginManager.prewarmPythonPlugins(); // 新增：预热Python插件以解决冷启动问题
     // Emoji list loading: scan Plugin/EmojiListGenerator/generated_lists if it exists
     // (EmojiListGenerator is an optional static plugin that generates emoji .txt files)

@@ -286,6 +286,9 @@ class PluginManager extends EventEmitter {
 
     async initializeStaticPlugins() {
         console.log('[PluginManager] Initializing static plugins...');
+        // 记录所有首次更新的 promise，方便调用方可选地 await 全部完成
+        // 解决时序 bug：EmojiListGenerator 等 static 插件需在服务器读取其产物（如 cachedEmojiLists）前完成首次执行
+        this._staticFirstUpdatePromises = [];
         for (const plugin of this.plugins.values()) {
             if (plugin.pluginType === 'static') {
                 // Immediately set a "loading" state for the placeholder.
@@ -296,9 +299,11 @@ class PluginManager extends EventEmitter {
                 }
 
                 // Trigger the first update in the background (fire and forget).
-                this._updateStaticPluginValue(plugin).catch(err => {
+                // 同时把 promise 收集起来，供 server.js 选择性地 await
+                const p = this._updateStaticPluginValue(plugin).catch(err => {
                     console.error(`[PluginManager] Initial background update for ${plugin.name} failed: ${err.message}`);
                 });
+                this._staticFirstUpdatePromises.push(p);
 
                 // Set up the scheduled recurring updates.
                 if (plugin.refreshIntervalCron) {
@@ -321,6 +326,16 @@ class PluginManager extends EventEmitter {
             }
         }
         console.log('[PluginManager] Static plugins initialization process has been started (updates will run in the background).');
+    }
+
+    /**
+     * 等待 initializeStaticPlugins 触发的所有首次更新完成
+     * 用于 server.js 在读取 static 插件产物（如 EmojiListGenerator 生成的 txt）前同步等待
+     */
+    async waitForStaticFirstUpdates() {
+        if (!Array.isArray(this._staticFirstUpdatePromises) || this._staticFirstUpdatePromises.length === 0) return;
+        await Promise.allSettled(this._staticFirstUpdatePromises);
+        this._staticFirstUpdatePromises = [];
     }
     async prewarmPythonPlugins() {
         console.log('[PluginManager] Checking for Python plugins to pre-warm...');

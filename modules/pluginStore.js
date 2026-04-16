@@ -142,16 +142,17 @@ function parseTarStream(stream, resolve, reject) {
 
             const relativePath = name.startsWith(prefixToStrip) ? name.substring(prefixToStrip.length) : name;
 
-            if (isFile && relativePath && !relativePath.endsWith('/')) {
-                entries.push({ path: relativePath, type: 'blob', size });
-            }
-
             // Skip past header + file content (padded to 512-byte boundary)
             const dataBlocks = Math.ceil(size / 512);
             const totalBytes = 512 + dataBlocks * 512;
+            // 数据不够则等待下次 chunk —— 必须在 push 之前 break，
+            // 否则同一个 header 会被下一轮 while 重复处理导致 entries 里文件重复
             if (buffer.length < totalBytes) {
-                // Need more data, wait for next chunk
                 break;
+            }
+
+            if (isFile && relativePath && !relativePath.endsWith('/')) {
+                entries.push({ path: relativePath, type: 'blob', size });
             }
             buffer = buffer.subarray(totalBytes);
         }

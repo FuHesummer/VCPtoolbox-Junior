@@ -332,6 +332,7 @@ const localAdminModules = {
     panelRegistry:     require('./routes/admin/panelRegistry'),
     sarPrompts:        require('./routes/admin/sarPrompts'),
     migration:         require('./routes/admin/migration'),
+    placeholderRegistry: require('./routes/admin/placeholderRegistry'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {
@@ -390,6 +391,35 @@ app.get('/admin_api/panel/current', (req, res) => {
 });
 
 app.use('/admin_api', localAdminRouter);
+
+// 🖼️ 图床 / 文件床请求代理（给 AdminPanel 显示缩略图用）
+// 主服务的 ImageServer / FileServer 处理 /pw=<Image_Key>/images/* 和 /pw=<File_Key>/files/*
+// adminServer 本身不处理这些路径，需要透传给主服务
+app.use((req, res, next) => {
+    if (!/^\/pw=[^/]+\/(images|files)\//.test(req.path)) return next();
+    const queryString = require('url').parse(req.url).search || '';
+    const targetUrl = `http://127.0.0.1:${MAIN_PORT}${req.path}${queryString}`;
+    const proxyOptions = {
+        method: req.method,
+        headers: { ...req.headers },
+        timeout: 30000,
+    };
+    delete proxyOptions.headers['host'];
+    delete proxyOptions.headers['content-length'];
+    const proxyReq = http.request(targetUrl, proxyOptions, (proxyRes) => {
+        res.status(proxyRes.statusCode);
+        for (const [k, v] of Object.entries(proxyRes.headers)) {
+            if (!['transfer-encoding', 'connection'].includes(k.toLowerCase())) res.setHeader(k, v);
+        }
+        proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => {
+        if (!res.headersSent) {
+            res.status(502).send(`Image/File proxy error: ${err.message}`);
+        }
+    });
+    req.pipe(proxyReq);
+});
 
 // ============================================================
 // 代理到主进程的模块

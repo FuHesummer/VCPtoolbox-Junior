@@ -1,0 +1,7 @@
+{
+  "name": "vcptoolbox-plugin-imageserver",
+  "private": true,
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

@@ -192,6 +192,21 @@ module.exports = function(options) {
             const asyncDesc = '动态占位符：异步任务完成后按 PluginName 与 requestId 替换为结果内容。';
             list.push({ type: 'async_placeholder', name: '{{VCP_ASYNC_RESULT::PluginName::requestId}}', preview: asyncDesc, charCount: charCount(asyncDesc) });
 
+            // 10. Emoji 表情包占位符（EmojiListGenerator 运行时生成的 {{XXX表情包}}）
+            // 直接从 cachedEmojiLists Map 枚举 — 每个 key 就是一个占位符
+            if (emojiLists && typeof emojiLists.entries === 'function') {
+                for (const [emojiName, listContent] of emojiLists.entries()) {
+                    const fileCount = typeof listContent === 'string' ? listContent.split('|').filter(Boolean).length : 0;
+                    list.push({
+                        type: 'emoji',
+                        name: `{{${emojiName}}}`,
+                        preview: truncatePreview(listContent),
+                        charCount: charCount(listContent),
+                        description: `EmojiListGenerator 扫描 image/${emojiName}/ 生成，共 ${fileCount} 张图片；AI 从中随机选图嵌入回复`,
+                    });
+                }
+            }
+
             res.json({ success: true, data: { list } });
         } catch (error) {
             console.error('[AdminPanelRoutes] Error listing placeholders:', error);
@@ -233,6 +248,11 @@ module.exports = function(options) {
                         }
                     }
                     if (type === 'env_sar') value = value || '[当前未配置或按请求模型注入]';
+                    break;
+                }
+                case 'emoji': {
+                    const emojiLists2 = cachedEmojiLists && typeof cachedEmojiLists.get === 'function' ? cachedEmojiLists : new Map();
+                    value = emojiLists2.get(rawName) || `[${rawName}列表不可用 — 请确认 image/${rawName}/ 目录有图片并重启主服务]`;
                     break;
                 }
                 case 'fixed': {
