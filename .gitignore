@@ -255,20 +255,29 @@ Plugin/*/package-lock.json
 
 # ==== Plugin/ 核心插件白名单 ====
 # 通过 PluginStore 从云商店安装的插件属于运行时数据，不纳入主仓库
-# 只保留 Junior 本体核心的 9 个插件（新增核心插件时加到下方 !Plugin/xxx/）
+# 只保留 Junior 本体核心的 13 个插件（新增核心插件时加到下方 !Plugin/xxx/）
 # DailyHot / ToolBoxFoldMemo 已移到插件仓库 VCPtoolbox-Junior-Plugins
 # VCPForum 已彻底解耦（admin-router + native panel + envContributions），从仓库装
 Plugin/*/
 !Plugin/ContextFoldingV2/
 !Plugin/DailyNote/
+!Plugin/DailyNoteEditor/
 !Plugin/DailyNoteManager/
 !Plugin/DailyNotePanel/
 !Plugin/DailyNoteWrite/
 !Plugin/LightMemo/
 !Plugin/RAGDiaryPlugin/
+!Plugin/SemanticGroupEditor/
+!Plugin/ThoughtClusterManager/
+!Plugin/TimelineOrganizer/
 !Plugin/UserAuth/
 !Plugin/VCPLog/
 !Plugin/CLAUDE.md
+
+# TimelineOrganizer 运行时编辑态 JSON（用户生成，不入库）
+Plugin/TimelineOrganizer/data/*_timeline.json
+# TimelineOrganizer 运行时生成的 TVStxt Timeline 文件（首次启动 bootstrap 自动重建）
+TVStxt/Timeline*.txt
 
 # 迁移功能临时测试
 .tmp-test/

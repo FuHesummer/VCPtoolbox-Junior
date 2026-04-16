@@ -62,7 +62,7 @@ VCPtoolbox-Junior/
 │
 ├── scripts/                  # 维护/修复脚本（由 maintain.js 调度）
 ├── build/                    # SEA 单可执行文件打包脚本
-├── Plugin/                   # 插件目录（9 个核心 + 商店安装的第三方）
+├── Plugin/                   # 插件目录（13 个核心 + 商店安装的第三方）
 ├── AdminPanel/               # 内嵌静态前端（同步自 VCPtoolbox-Junior-Panel 仓库）
 ├── rust-vexus-lite/          # Rust N-API 向量索引子项目
 │

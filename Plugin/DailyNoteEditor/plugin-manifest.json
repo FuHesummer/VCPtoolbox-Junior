@@ -1,0 +1,37 @@
+{
+  "manifestVersion": "1.0.0",
+  "name": "DailyNoteEditor",
+  "version": "1.0.0",
+  "displayName": "日记编辑工具",
+  "description": "AI 可调用的日记编辑工具：覆盖写入、查找替换、删除单条日记文件。与 DailyNoteManager（批处理）互补，DailyNoteEditor 面向对单个文件的精准操作。",
+  "author": "VCPtoolbox-Junior",
+  "pluginType": "synchronous",
+  "entryPoint": {
+    "type": "nodejs",
+    "command": "node DailyNoteEditor.js"
+  },
+  "communication": {
+    "protocol": "stdio",
+    "timeout": 10000
+  },
+  "configSchema": {},
+  "capabilities": {
+    "invocationCommands": [
+      {
+        "commandIdentifier": "EditDailyNote",
+        "description": "覆盖写入单条日记文件。\n参数:\n- folder (字符串, 必需): 日记所在目录（相对 VCP 根），如 'knowledge/VCP开发' 或 'Agent/Nova/diary'。\n- filename (字符串, 必需): 日记文件名（含扩展名），如 '[2026.04.16]记录.txt'。\n- content (字符串, 必需): 完整的新内容（将覆盖旧文件）。\n调用格式:\n<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNoteEditor「末」,\ncommand:「始」EditDailyNote「末」,\nfolder:「始」Agent/Nova/diary「末」,\nfilename:「始」[2026.04.16].txt「末」,\ncontent:「始」[2026.04.16]-Nova\n今日发生的事情……「末」\n<<<[END_TOOL_REQUEST]>>>",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNoteEditor「末」,\ncommand:「始」EditDailyNote「末」,\nfolder:「始」knowledge/VCP开发「末」,\nfilename:「始」20_新协议草案.txt「末」,\ncontent:「始」# 新协议草案\n内容详细描述...「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "FindReplaceInNote",
+        "description": "在单条日记中查找并替换文本（精准局部编辑，不覆盖整个文件）。\n参数:\n- folder (字符串, 必需): 日记目录（相对 VCP 根）。\n- filename (字符串, 必需): 日记文件名。\n- targetText (字符串, 必需): 待替换的原文（长度 ≥ 10 字符，避免误伤）。\n- replacementText (字符串, 必需): 新文本。\n调用格式:\n<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNoteEditor「末」,\ncommand:「始」FindReplaceInNote「末」,\nfolder:「始」Agent/Nova/diary「末」,\nfilename:「始」[2026.04.16].txt「末」,\ntargetText:「始」今天天气晴朗，阳光明媚。「末」,\nreplacementText:「始」今天下雨了，心情忧郁。「末」\n<<<[END_TOOL_REQUEST]>>>",
+        "example": "局部修改已有日记的某段内容，避免 AI 重写整条导致信息丢失。"
+      },
+      {
+        "commandIdentifier": "DeleteDailyNote",
+        "description": "删除单条日记文件（不可逆操作，需谨慎）。\n参数:\n- folder (字符串, 必需): 日记目录。\n- filename (字符串, 必需): 日记文件名。\n调用格式:\n<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNoteEditor「末」,\ncommand:「始」DeleteDailyNote「末」,\nfolder:「始」knowledge/临时笔记「末」,\nfilename:「始」废弃.txt「末」\n<<<[END_TOOL_REQUEST]>>>",
+        "example": "删除不再需要的日记条目。"
+      }
+    ]
+  }
+}

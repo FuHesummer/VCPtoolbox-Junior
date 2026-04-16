@@ -9,10 +9,11 @@ const { parseEnv } = require('./config');
 
 const JUNIOR_PLUGIN_DIR = path.join(PROJECT_ROOT, 'Plugin');
 
-// 9 个内置核心（README 定义）
+// 13 个内置核心（README 定义）
 const BUILTIN_CORE = new Set([
     'RAGDiaryPlugin', 'DailyNote', 'DailyNoteWrite', 'DailyNoteManager',
     'DailyNotePanel', 'LightMemo', 'ContextFoldingV2', 'UserAuth', 'VCPLog',
+    'TimelineOrganizer', 'DailyNoteEditor', 'SemanticGroupEditor', 'ThoughtClusterManager',
 ]);
 
 function resolvePluginsRepoRoot() {

@@ -1,0 +1,22 @@
+{
+  "manifestVersion": "1.0.0",
+  "name": "TimelineOrganizer",
+  "displayName": "时间线整理器",
+  "version": "1.0.0",
+  "description": "为每个 Agent 管理生平时间线条目（按日期 + summary），一键生成 Markdown 格式时间线 txt 到 TVStxt/，供 Agent 提示词通过 {{VarTimeline_Agent}} 引用。",
+  "author": "VCPtoolbox-Junior",
+  "pluginType": "service",
+  "entryPoint": {
+    "script": "TimelineOrganizer.js"
+  },
+  "communication": {
+    "protocol": "direct"
+  },
+  "adminNav": {
+    "title": "时间线整理",
+    "icon": "timeline",
+    "type": "native",
+    "entry": "panel.js"
+  },
+  "capabilities": {}
+}

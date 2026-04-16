@@ -1,0 +1,7 @@
+{
+  "name": "vcp-daily-note-editor",
+  "version": "1.0.0",
+  "description": "VCPtoolbox-Junior 日记编辑工具（AI 调用）",
+  "main": "DailyNoteEditor.js",
+  "private": true
+}
