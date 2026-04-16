@@ -255,7 +255,7 @@ Plugin/*/package-lock.json
 
 # ==== Plugin/ 核心插件白名单 ====
 # 通过 PluginStore 从云商店安装的插件属于运行时数据，不纳入主仓库
-# 只保留 Junior 本体核心的 15 个插件（新增核心插件时加到下方 !Plugin/xxx/）
+# 只保留 Junior 本体核心的 16 个插件（新增核心插件时加到下方 !Plugin/xxx/）
 # DailyHot / ToolBoxFoldMemo 已移到插件仓库 VCPtoolbox-Junior-Plugins
 # VCPForum 已彻底解耦（admin-router + native panel + envContributions），从仓库装
 Plugin/*/
@@ -266,6 +266,7 @@ Plugin/*/
 !Plugin/DailyNotePanel/
 !Plugin/DailyNoteWrite/
 !Plugin/EmojiListGenerator/
+!Plugin/FileOperator/
 !Plugin/ImageServer/
 !Plugin/LightMemo/
 !Plugin/RAGDiaryPlugin/

@@ -1,0 +1,13 @@
+{
+  "name": "vcptoolbox-plugin-fileoperator",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
+    "glob": "^10.0.0",
+    "mammoth": "^1.11.0",
+    "minimatch": "^9.0.0",
+    "pdf-parse": "^2.2.0"
+  }
+}

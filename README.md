@@ -154,7 +154,7 @@ VCPtoolbox-Junior/
 │   ├── rag_params.json            # RAG 热参数（AdminPanel 可改，权威位置）
 │   └── ...
 │
-├── Plugin/                        # 插件目录（15 个内置核心 + 商店扩展）
+├── Plugin/                        # 插件目录（16 个内置核心 + 商店扩展）
 │   ├── ContextFoldingV2/          # 上下文折叠
 │   ├── DailyNote*/                # 日记系统套件（Write/Manager/Panel/Editor）
 │   ├── EmojiListGenerator/        # 表情包清单生成器（扫 image/XXX表情包/）
