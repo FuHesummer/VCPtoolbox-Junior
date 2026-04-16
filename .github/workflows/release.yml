@@ -177,8 +177,11 @@ jobs:
             echo "❌ AdminPanel 不可达 (HTTP $HTTP_CODE)"
             echo "--- panel.html head ---"
             head -20 /tmp/panel.html 2>/dev/null || echo "(no response)"
-            echo "--- startup.log tail (adminServer 日志在这里) ---"
-            tail -50 startup.log
+            echo "--- adminServer / Combined / PanelUpdater 相关日志 ---"
+            grep -iE "admin|combined|panel|listen" startup.log || echo "(无 admin 相关输出 — adminServer 可能完全没起)"
+            echo ""
+            echo "--- startup.log 完整内容 ---"
+            cat startup.log
             kill -9 $PID 2>/dev/null || true
             exit 1
           fi

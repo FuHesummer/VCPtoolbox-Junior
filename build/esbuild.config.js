@@ -80,9 +80,19 @@ async function build() {
         '// VCPtoolbox-Junior — combined entry (server + admin, single process)',
         "require('../server.js');",
         'setTimeout(() => {',
-        "    try { require('../adminServer.js'); }",
-        "    catch (e) { console.error('[Combined] Admin server failed:', e.message); }",
+        "    console.log('[Combined] ⏳ Loading adminServer...');",
+        '    try {',
+        "        require('../adminServer.js');",
+        "        console.log('[Combined] ✅ adminServer.js require 完成（IIFE 已调度，等待 app.listen）');",
+        '    } catch (e) {',
+        "        console.error('[Combined] ❌ Admin server require 失败:', e.message);",
+        '        console.error(e.stack);',
+        '    }',
         '}, 3000);',
+        "process.on('unhandledRejection', (reason, p) => {",
+        "    console.error('[Combined] ❌ unhandledRejection:', reason && reason.message ? reason.message : reason);",
+        "    if (reason && reason.stack) console.error(reason.stack);",
+        '});',
     ].join('\n'));
 
     // SEA dynamic require patch:
