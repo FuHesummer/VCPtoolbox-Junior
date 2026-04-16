@@ -44,7 +44,7 @@ const NATIVE_MODULES = [
 
 // User-facing directories to include
 // 注意：AdminPanel 解耦后不在本体，由 prepareAdminPanel() 独立处理
-// Plugin/ 只复制本体 13 个内置核心；仓库扩展插件由 preparePlugins() 合并
+// Plugin/ 只复制本体 16 个内置核心；仓库扩展插件由 preparePlugins() 合并
 const USER_DIRS = [
     'Agent',
     'Plugin',
@@ -482,10 +482,11 @@ async function prepareAdminPanel(outputDir) {
 /**
  * 合并插件仓库到本体 Plugin/
  *
- * 本体 Plugin/ 只保留 13 个内置核心（README 定义）。
+ * 本体 Plugin/ 只保留 16 个内置核心（README 定义）。
  * 插件仓库 VCPtoolbox-Junior-Plugins 提供扩展插件。
  *
  * 查找顺序：env PLUGINS_REPO_PATH > ../VCPtoolbox-Junior-Plugins
+ * 同名冲突策略：本体核心优先，仓库同名插件跳过（见下方 skipped 分支）
  */
 async function preparePlugins(outputDir) {
     console.log('🔌 Merging extension plugins...');
@@ -497,7 +498,7 @@ async function preparePlugins(outputDir) {
 
     if (!fs.existsSync(pluginsRoot)) {
         console.warn(`   ⚠️  未找到插件仓库: ${pluginsRoot}`);
-        console.warn('      产物仅含 13 个内置核心插件。');
+        console.warn('      产物仅含 16 个内置核心插件。');
         return;
     }
 
