@@ -106,7 +106,6 @@ jobs:
             "EMBEDDING_MODEL_NAME=test" \
             "VECTORDB_DIMENSION=3072" \
             "DebugMode=false" \
-            "PANEL_RELEASE_URL=disabled" \
             "KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false" \
             > config.env
 
@@ -168,7 +167,6 @@ jobs:
           EMBEDDING_MODEL_NAME=test
           VECTORDB_DIMENSION=3072
           DebugMode=false
-          PANEL_RELEASE_URL=disabled
           KNOWLEDGEBASE_FULL_SCAN_ON_STARTUP=false
           ENVEOF
 
