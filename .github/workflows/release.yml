@@ -35,6 +35,10 @@ jobs:
             platform: linux
             arch: x64
             exe: VCPtoolbox
+          - os: ubuntu-22.04-arm
+            platform: linux
+            arch: arm64
+            exe: VCPtoolbox
           - os: macos-latest
             platform: darwin
             arch: arm64
@@ -253,6 +257,7 @@ jobs:
             |------|------|------|
             | Windows x64 | `vcp-junior-win32-x64.zip` | 解压后运行 `VCPtoolbox.exe` |
             | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x VCPtoolbox && ./VCPtoolbox` |
+            | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` | 树莓派 / AWS Graviton / ARM 服务器 |
             | macOS ARM64 (Apple Silicon) | `vcp-junior-darwin-arm64.tar.gz` | M1/M2/M3/M4 |
             | Docker | `ghcr.io` | linux/amd64，见下方 |
 
