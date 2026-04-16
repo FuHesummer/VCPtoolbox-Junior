@@ -1,0 +1,4 @@
+# Shell scripts must use LF line endings for Unix/Linux execution
+# 防 Windows autocrlf 把 LF 换成 CRLF 导致 Linux 上 bash 报 "bad interpreter"
+*.sh text eol=lf
+scripts/install.sh text eol=lf
