@@ -347,4 +347,4 @@ FuHesummer/VCPtoolbox-Junior (本仓库，精简解耦)
 
 ## License
 
-[MIT](./LICENSE) — 基于上游 VCPToolBox 的许可
+[CC BY-NC-SA 4.0](./LICENSE) — 沿用上游 [VCPToolBox](https://github.com/lioensky/VCPToolBox) 协议（署名-非商业性使用-相同方式共享）
