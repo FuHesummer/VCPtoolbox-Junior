@@ -35,10 +35,6 @@ jobs:
             platform: linux
             arch: x64
             exe: VCPtoolbox
-          - os: macos-13
-            platform: darwin
-            arch: x64
-            exe: VCPtoolbox
           - os: macos-latest
             platform: darwin
             arch: arm64
@@ -258,8 +254,9 @@ jobs:
             | Windows x64 | `vcp-junior-win32-x64.zip` | 解压后运行 `VCPtoolbox.exe` |
             | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x VCPtoolbox && ./VCPtoolbox` |
             | macOS ARM64 (Apple Silicon) | `vcp-junior-darwin-arm64.tar.gz` | M1/M2/M3/M4 |
-            | macOS x64 (Intel) | `vcp-junior-darwin-x64.tar.gz` | Intel Mac |
             | Docker | `ghcr.io` | linux/amd64，见下方 |
+
+            > 注：未提供 macOS x64（Intel Mac）产物 — GitHub Actions 已弃用 macos-13 runner。Intel Mac 用户可从源码构建（`git clone` + `npm run package:mac`）。
 
             ## 🚀 首次使用
 
