@@ -159,9 +159,12 @@ app.use(adminAuth);
 // ============================================================
 // 静态面板挂载（ADMIN_PANEL_SOURCE 可配置，支持多面板切换）
 // 按优先级查找候选目录，第一个有效的挂到 /AdminPanel/*
+//
+// 🔑 注意：此函数必须在 ensurePanel() 下载完成后才能调用，
+// 否则首次启动时 panelUpdater 下载的目录还没文件，candidates 全 miss → fallback。
 // ============================================================
 let mountedPanelPath = null;
-(function mountAdminPanel() {
+function mountAdminPanel() {
     const configured = (process.env.ADMIN_PANEL_SOURCE || '').trim();
     const candidates = [];
 
@@ -172,12 +175,18 @@ let mountedPanelPath = null;
             source: 'ADMIN_PANEL_SOURCE',
         });
     }
-    // 2. 独立面板仓库的 dist（默认：git clone 到同级目录 + npm run build）
+    // 2. panelUpdater 下载目录（运行时从 Panel Release 拉到这里）
+    //    路径与 modules/panelUpdater.js 的 PANEL_DIR 保持一致
+    candidates.push({
+        path: path.join(process.env.VCP_ROOT || __dirname, 'AdminPanel'),
+        source: 'panelUpdater download',
+    });
+    // 3. 独立面板仓库的 dist（开发模式：sibling git clone + npm run build）
     candidates.push({
         path: path.resolve(__dirname, '..', 'VCPtoolbox-Junior-Panel', 'dist'),
         source: 'sibling repo',
     });
-    // 3. symlink AdminPanel-Vue/dist（本地 open 的 symlink 指向独立仓库，跟 #2 殊途同归）
+    // 4. symlink AdminPanel-Vue/dist（本地 open 的 symlink 指向独立仓库，跟 #3 殊途同归）
     candidates.push({
         path: path.join(__dirname, 'AdminPanel-Vue', 'dist'),
         source: 'local symlink',
@@ -201,7 +210,9 @@ let mountedPanelPath = null;
     }
 
     // 所有候选都失败 → 挂一个提示页
-    app.get('/AdminPanel*', (req, res) => {
+    // 🔑 Express 5 + path-to-regexp v8 不再支持 '/AdminPanel*' 裸通配符语法
+    // 必须用正则或 '/AdminPanel/{*rest}' 命名通配符
+    app.get(/^\/AdminPanel(\/.*)?$/, (req, res) => {
         res.status(503).set('Content-Type', 'text/html; charset=utf-8').send(`<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>管理面板未配置</title>
 <style>body{font-family:system-ui,sans-serif;max-width:680px;margin:60px auto;padding:0 20px;background:#faf5f7;color:#3d2c3e;line-height:1.7;}
@@ -222,7 +233,7 @@ ADMIN_PANEL_SOURCE=/opt/my-custom-panel/dist</pre>
     });
     console.warn('[AdminServer] ⚠ 未找到任何面板目录。/AdminPanel/* 将返回 503 提示页。候选:\n' +
         candidates.map(c => `  - ${c.source}: ${c.path}`).join('\n'));
-})();
+}
 
 // 默认路由：访问根路径重定向到 AdminPanel
 app.get('/', (req, res) => {
@@ -537,12 +548,14 @@ app.post('/admin_api/config/main/reload-notify', async (req, res) => {
 });
 
 // ============================================================
-// 启动服务器（先确保面板资源存在）
+// 启动服务器（顺序：下载 Panel Release → 挂载静态 → listen）
+// 🔑 mountAdminPanel 必须在 ensurePanel 之后，否则候选目录空，走 fallback
 // ============================================================
 const { ensurePanel } = require('./modules/panelUpdater');
 
 (async () => {
     await ensurePanel({ silent: false });
+    mountAdminPanel();
     app.listen(ADMIN_PORT, () => {
         console.log(`[AdminServer] 管理面板独立进程已启动，监听端口 ${ADMIN_PORT}`);
         console.log(`[AdminServer] 管理面板地址: http://localhost:${ADMIN_PORT}/AdminPanel/`);
