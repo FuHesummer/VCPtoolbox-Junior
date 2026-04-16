@@ -78,6 +78,15 @@ async function build() {
     const entryFile = path.join(__dirname, '_combined-entry.js');
     fs.writeFileSync(entryFile, [
         '// VCPtoolbox-Junior — combined entry (server + admin, single process)',
+        '',
+        '// 🔑 CRITICAL: dotenv 必须最先加载',
+        '// esbuild bundle 把所有模块合并，模块级代码按依赖顺序执行；',
+        '// panelUpdater.js 有模块级 const PANEL_DISABLED = process.env.PANEL_RELEASE_URL===disabled，',
+        '// 若 dotenv.config 在 server.js 模块级且晚于 panelUpdater 初始化，',
+        '// PANEL_DISABLED 会被误判为 false → adminServer 的 ensurePanel 去下载',
+        '// GitHub Release 超时 → app.listen 永不触发 → AdminPanel HTTP 000。',
+        "require('dotenv').config({ path: 'config.env' });",
+        '',
         "require('../server.js');",
         'setTimeout(() => {',
         "    console.log('[Combined] ⏳ Loading adminServer...');",
