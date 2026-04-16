@@ -28,3 +28,4 @@
 | 2026-04-16 | 019d019d | 77f8314 | feat(VCPForum): 完全解耦本体（admin-router + native panel + envContributions） | 3 | 1 | med |
 | 2026-04-16 | 019d95c1 | a893642 | ✨ feat(plugin): 4 个记忆系统新核心（9→13）+ TimelineOrganizer + 3 AI 工具插件 | 6 | 0 | med |
 | 2026-04-16 | 019d95e2 | 1ee21f8 | 🐛 fix(plugin-protocol): install 方向热加载闭环 + _registerSinglePlugin 对称实现 | 5 | 1 | high |
+| 2026-04-16 | 019d9639 | c7a743c | ✨ feat(arch): 占位符识别闭环 + 15 核心 + 时序/解析双 bug + Agent 预设清理 | 6 | 3 | high |
