@@ -46,6 +46,12 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    # 统一 shell 为 bash（Windows 使用 Git Bash）
+    # 避免 Windows 默认 PowerShell 不认 Unix 语法（如 ls -la、printf）
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout main repo
         uses: actions/checkout@v4
