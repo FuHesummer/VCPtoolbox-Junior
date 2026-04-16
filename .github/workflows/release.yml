@@ -302,7 +302,10 @@ jobs:
 
             当前版本含大量架构改动（v1 → v2 三仓库解耦），欢迎反馈 bug 到 [Issues](https://github.com/FuHesummer/VCPtoolbox-Junior/issues)。
           draft: false
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          # beta 版仍视为 latest（宝宝决策：未发给用户时 latest=最新 beta）
+          # 这样用户看 Releases 页面 + GitHub API /latest 都能拿到最新
+          prerelease: false
+          make_latest: true
           files: |
             artifacts/**/*
 
