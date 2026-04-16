@@ -15,7 +15,7 @@
 # ============================================================
 set -u
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 REPO="FuHesummer/VCPtoolbox-Junior"
 SCRIPT_URL="https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh"
 RELEASE_API="https://api.github.com/repos/${REPO}/releases/latest"
@@ -23,6 +23,19 @@ DEFAULT_INSTALL_DIR="${HOME}/vcptoolbox-junior"
 PM2_NAME="vcp-junior"
 EXE_NAME="VCPtoolbox"
 CONFIG_FILE="${HOME}/.vcp-junior-install"
+PROXY_FILE="${HOME}/.vcp-junior-proxy"
+
+# GitHub 加速镜像前缀（末尾带斜杠，如 https://ghproxy.net/）
+# 国内服务器访问 raw.githubusercontent.com 和 Release 下载可能被墙，需要镜像代理
+# 优先级：env GH_PROXY > $PROXY_FILE > 空（直连）
+GH_PROXY="${GH_PROXY:-}"
+
+# 推荐镜像（从快到慢，用户可自己改）
+RECOMMENDED_PROXIES=(
+    "https://ghproxy.net/"
+    "https://gh-proxy.com/"
+    "https://ghfast.top/"
+)
 
 # ------------------------------------------------------------
 # 颜色（终端 tty 且未禁用时启用）
@@ -67,6 +80,31 @@ load_install_dir() {
 
 save_install_dir() {
     echo "$INSTALL_DIR" > "$CONFIG_FILE"
+}
+
+load_proxy() {
+    # env 优先；否则读持久化文件
+    if [ -z "$GH_PROXY" ] && [ -f "$PROXY_FILE" ]; then
+        GH_PROXY="$(cat "$PROXY_FILE" 2>/dev/null | head -1)"
+    fi
+}
+
+save_proxy() {
+    if [ -n "$GH_PROXY" ]; then
+        echo "$GH_PROXY" > "$PROXY_FILE"
+    else
+        rm -f "$PROXY_FILE"
+    fi
+}
+
+# 包装 github.com / raw.githubusercontent.com URL，走镜像代理
+gh_url() {
+    local url="$1"
+    if [ -n "$GH_PROXY" ]; then
+        echo "${GH_PROXY%/}/${url}"
+    else
+        echo "$url"
+    fi
 }
 
 refresh_status() {
@@ -169,6 +207,13 @@ print_header() {
     printf "%s║%s  最新版本: %s%-38s%s  %s║%s\n" \
         "$C_CYN" "$C_RST" "$latest_color" "$latest_show" "$C_RST" "$C_CYN" "$C_RST"
 
+    local proxy_show="${GH_PROXY:-直连}"
+    local proxy_color="$C_DIM"
+    [ -n "$GH_PROXY" ] && proxy_color="$C_GRN"
+    [ ${#proxy_show} -gt 38 ] && proxy_show="${proxy_show:0:35}..."
+    printf "%s║%s  镜像代理: %s%-38s%s  %s║%s\n" \
+        "$C_CYN" "$C_RST" "$proxy_color" "$proxy_show" "$C_RST" "$C_CYN" "$C_RST"
+
     printf "%s╠══════════════════════════════════════════════════╣%s\n" "$C_CYN" "$C_RST"
     cat <<EOF
 ${C_CYN}║${C_RST}   ${C_BLD}1${C_RST}) 安装 / 重新安装到最新 Release
@@ -182,6 +227,7 @@ ${C_CYN}║${C_RST}   ${C_BLD}8${C_RST}) 编辑 config.env
 ${C_CYN}║${C_RST}   ${C_BLD}9${C_RST}) 配置开机自启（pm2 startup + save）
 ${C_CYN}║${C_RST}  ${C_BLD}10${C_RST}) 更新本脚本（从 GitHub raw 拉新版）
 ${C_CYN}║${C_RST}  ${C_BLD}11${C_RST}) 卸载（删目录 + pm2 delete）
+${C_CYN}║${C_RST}  ${C_BLD}12${C_RST}) 配置 GitHub 加速镜像（国内服务器必备）
 ${C_CYN}║${C_RST}   ${C_BLD}r${C_RST}) 刷新状态
 ${C_CYN}║${C_RST}   ${C_BLD}q${C_RST}) 退出
 ${C_CYN}╚══════════════════════════════════════════════════╝${C_RST}
@@ -225,11 +271,14 @@ action_install() {
     fi
 
     local asset="vcp-junior-linux-${ARCH}.tar.gz"
-    local url="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}"
+    local url
+    url="$(gh_url "https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}")"
 
     info "下载 ${asset} (${LATEST_VERSION})..."
+    [ -n "$GH_PROXY" ] && info "走镜像: $GH_PROXY"
     if ! curl -fL --progress-bar -o "$asset" "$url"; then
         err "下载失败: $url"
+        [ -z "$GH_PROXY" ] && warn "国内服务器若连 GitHub 慢/超时，菜单 12 配置镜像代理后重试"
         return 1
     fi
 
@@ -317,11 +366,14 @@ action_update() {
 
     cd "$INSTALL_DIR" || return 1
     local asset="vcp-junior-linux-${ARCH}.tar.gz"
-    local url="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}"
+    local url
+    url="$(gh_url "https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}")"
 
     info "下载..."
+    [ -n "$GH_PROXY" ] && info "走镜像: $GH_PROXY"
     if ! curl -fL --progress-bar -o ".update.tar.gz" "$url"; then
         err "下载失败"
+        [ -z "$GH_PROXY" ] && warn "国内服务器菜单 12 配置镜像代理后重试"
         return 1
     fi
 
@@ -460,11 +512,14 @@ action_startup() {
 # 操作：脚本自更新
 # ------------------------------------------------------------
 action_self_update() {
-    info "从 $SCRIPT_URL 拉取..."
+    local url
+    url="$(gh_url "$SCRIPT_URL")"
+    info "从 $url 拉取..."
     local tmp
     tmp="$(mktemp)"
-    if ! curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$tmp"; then
+    if ! curl -fsSL --max-time 15 "$url" -o "$tmp"; then
         err "拉取失败"
+        [ -z "$GH_PROXY" ] && warn "国内服务器菜单 12 配置镜像代理后重试"
         rm -f "$tmp"
         return 1
     fi
@@ -506,6 +561,70 @@ action_self_update() {
 }
 
 # ------------------------------------------------------------
+# 操作：配置 GitHub 加速镜像
+# ------------------------------------------------------------
+action_proxy() {
+    echo ""
+    info "当前镜像: ${GH_PROXY:-（未设置，直连 GitHub）}"
+    echo ""
+    echo "国内服务器直连 raw.githubusercontent.com / release-assets 可能被墙，"
+    echo "可以选一个 GitHub 加速镜像。推荐："
+    echo ""
+    local i=1
+    for p in "${RECOMMENDED_PROXIES[@]}"; do
+        echo "  $i) $p"
+        i=$((i + 1))
+    done
+    echo "  c) 自定义镜像 URL（以 / 结尾）"
+    echo "  n) 清除镜像（改为直连）"
+    echo "  t) 测试当前镜像连通性"
+    echo "  x) 返回（不修改）"
+    echo ""
+    ask "选择 [1-${#RECOMMENDED_PROXIES[@]}/c/n/t/x]: "
+    read -r pchoice
+
+    case "$pchoice" in
+        1|2|3)
+            local idx=$((pchoice - 1))
+            GH_PROXY="${RECOMMENDED_PROXIES[$idx]}"
+            save_proxy
+            ok "已设置镜像: $GH_PROXY"
+            ;;
+        c|C)
+            ask "输入镜像 URL（如 https://xxx.com/）: "
+            read -r custom
+            if [ -n "$custom" ]; then
+                # 自动补斜杠
+                [ "${custom: -1}" != "/" ] && custom="${custom}/"
+                GH_PROXY="$custom"
+                save_proxy
+                ok "已设置镜像: $GH_PROXY"
+            fi
+            ;;
+        n|N)
+            GH_PROXY=""
+            save_proxy
+            ok "已清除镜像，改为直连"
+            ;;
+        t|T)
+            local test_url="https://raw.githubusercontent.com/${REPO}/main/README.md"
+            [ -n "$GH_PROXY" ] && test_url="${GH_PROXY%/}/${test_url}"
+            info "测试 $test_url"
+            local code
+            code=$(timeout 15 curl -sSo /dev/null -w "%{http_code}" "$test_url" 2>&1)
+            if [ "$code" = "200" ]; then
+                ok "镜像正常"
+            else
+                err "镜像异常 (HTTP $code)"
+            fi
+            ;;
+        *)
+            info "已取消"
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------
 # 操作：卸载
 # ------------------------------------------------------------
 action_uninstall() {
@@ -542,12 +661,13 @@ main() {
     check_deps
     detect_arch
     load_install_dir
+    load_proxy
     refresh_status
     fetch_latest_version
 
     while true; do
         print_header
-        ask "选择 [1-11/r/q]: "
+        ask "选择 [1-12/r/q]: "
         read -r choice
 
         case "$choice" in
@@ -562,6 +682,7 @@ main() {
             9)  action_startup ;;
             10) action_self_update ;;
             11) action_uninstall ;;
+            12) action_proxy ;;
             r|R) fetch_latest_version ;;
             q|Q) echo ""; ok "再见 👋"; exit 0 ;;
             "") ;;
