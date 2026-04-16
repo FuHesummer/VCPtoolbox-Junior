@@ -47,23 +47,76 @@ module.exports = function(options) {
         }
     });
 
-    // POST /plugin-store/install/:name - Install a plugin
+    // POST /plugin-store/install/:name - Install a plugin + 热加载到 PluginManager
     router.post('/plugin-store/install/:name', async (req, res) => {
         try {
             const { name } = req.params;
             const { force } = req.body || {};
             const result = await store.install(name, { force: !!force });
+
+            // 协议钩子：安装完成后调 _registerSinglePlugin，让 {{VCPAllTools}} /
+            // placeholders / messagePreprocessors / serviceModules 立即包含新插件，
+            // 用户无需重启主服务。对称于 uninstall 路径的 _unregisterSinglePlugin。
+            if (result?.success && pluginManager && typeof pluginManager._registerSinglePlugin === 'function') {
+                try {
+                    const reg = await pluginManager._registerSinglePlugin(name);
+                    if (reg.ok) {
+                        result.hotLoaded = true;
+                        result.registered = reg.registered;
+                    } else if (reg.reason !== 'already-registered') {
+                        console.warn(`[pluginStore route] 热加载 ${name} 失败: ${reg.reason}`);
+                        result.hotLoaded = false;
+                        result.hotLoadReason = reg.reason;
+                    }
+                } catch (e) {
+                    console.warn(`[pluginStore route] 热加载 ${name} 异常（安装已完成，需重启主服务）: ${e.message}`);
+                    result.hotLoaded = false;
+                    result.hotLoadReason = e.message;
+                }
+            }
+
             res.json(result);
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }
     });
 
-    // POST /plugin-store/update/:name - Update a plugin
+    // POST /plugin-store/update/:name - Update a plugin + 热重载（先卸再装）
     router.post('/plugin-store/update/:name', async (req, res) => {
         try {
             const { name } = req.params;
+
+            // 更新前反注册旧版本（避免 require 缓存命中旧模块）
+            if (pluginManager) {
+                if (typeof pluginManager._unregisterPluginTvsVariables === 'function') {
+                    try { await pluginManager._unregisterPluginTvsVariables(name, 'update'); }
+                    catch (e) { console.warn(`[pluginStore route] update TVS 还原失败（继续）: ${e.message}`); }
+                }
+                if (typeof pluginManager._unregisterPluginEnvContributions === 'function') {
+                    try { await pluginManager._unregisterPluginEnvContributions(name); }
+                    catch (e) { console.warn(`[pluginStore route] update env 反注册失败（继续）: ${e.message}`); }
+                }
+                if (typeof pluginManager._unregisterSinglePlugin === 'function') {
+                    try { await pluginManager._unregisterSinglePlugin(name); }
+                    catch (e) { console.warn(`[pluginStore route] update 主注册表反注册失败（继续）: ${e.message}`); }
+                }
+            }
+
             const result = await store.update(name);
+
+            // 更新完成后重新加载
+            if (result?.success && pluginManager && typeof pluginManager._registerSinglePlugin === 'function') {
+                try {
+                    const reg = await pluginManager._registerSinglePlugin(name);
+                    result.hotLoaded = reg.ok;
+                    if (!reg.ok) result.hotLoadReason = reg.reason;
+                } catch (e) {
+                    console.warn(`[pluginStore route] update 热加载 ${name} 异常: ${e.message}`);
+                    result.hotLoaded = false;
+                    result.hotLoadReason = e.message;
+                }
+            }
+
             res.json(result);
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });

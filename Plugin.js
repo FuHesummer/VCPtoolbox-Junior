@@ -879,6 +879,185 @@ class PluginManager extends EventEmitter {
         return { found: true, cleaned };
     }
 
+    /**
+     * 单插件整体注册 —— 在运行时把指定插件加载到 PluginManager（对称 _unregisterSinglePlugin）
+     *
+     * 用于「插件商店安装后热加载」场景：装完插件无需重启主服务即可使用。
+     * 与 loadPlugins 的全量扫描不同，此方法只处理单个插件，不影响其他已注册插件。
+     *
+     * 执行顺序（对称于 _unregisterSinglePlugin 的反向）：
+     *   1. 读 manifest + config.env
+     *   2. plugins Map 注册
+     *   3. _registerPluginTvsVariables（tvs 协议）
+     *   4. _registerPluginEnvContributions（env 贡献）
+     *   5. 按 pluginType 分支：
+     *      - messagePreprocessor/service/hybridservice → require 脚本 → initialize → 注册到对应 Map
+     *      - static → 设置加载中占位符 + 异步首次更新 + cron 定时任务
+     *   6. buildVCPDescription（重建 VCP 工具描述）
+     *
+     * @param {string} pluginName
+     * @returns {Promise<{ok: boolean, reason?: string, manifest?: object, registered?: string[]}>}
+     */
+    async _registerSinglePlugin(pluginName) {
+        // 幂等性：已注册则跳过（避免 install 多次触发 / 竞态）
+        if (this.plugins.has(pluginName)) {
+            return { ok: false, reason: 'already-registered' };
+        }
+
+        const pluginPath = path.join(PLUGIN_DIR, pluginName);
+        const manifestPath = path.join(pluginPath, manifestFileName);
+        let manifest;
+        try {
+            const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+            manifest = JSON.parse(manifestContent);
+        } catch (err) {
+            return { ok: false, reason: `manifest-read-failed: ${err.message}` };
+        }
+
+        if (!manifest.name || !manifest.pluginType || !manifest.entryPoint) {
+            return { ok: false, reason: 'manifest-incomplete' };
+        }
+        if (manifest.name !== pluginName) {
+            return { ok: false, reason: `manifest-name-mismatch: expected ${pluginName}, got ${manifest.name}` };
+        }
+
+        // 读 config.env（可选）
+        manifest.basePath = pluginPath;
+        manifest.pluginSpecificEnvConfig = {};
+        try {
+            const pluginEnvContent = await fs.readFile(path.join(pluginPath, 'config.env'), 'utf-8');
+            manifest.pluginSpecificEnvConfig = dotenv.parse(pluginEnvContent);
+        } catch (envError) {
+            if (envError.code !== 'ENOENT') {
+                console.warn(`[PluginManager] Error reading config.env for ${manifest.name}: ${envError.message}`);
+            }
+        }
+
+        const registered = [];
+
+        // 1. 主注册表
+        this.plugins.set(manifest.name, manifest);
+        registered.push('plugins');
+        console.log(`[PluginManager] 🔌 Hot-loading: ${manifest.displayName} (${manifest.name}, Type: ${manifest.pluginType})`);
+
+        // 2. TVS 变量协议
+        try {
+            await this._registerPluginTvsVariables(manifest);
+            registered.push('tvsVariables');
+        } catch (e) {
+            console.warn(`[PluginManager] ${manifest.name} tvs 注册失败（继续）: ${e.message}`);
+        }
+
+        // 3. env 贡献协议
+        try {
+            await this._registerPluginEnvContributions(manifest);
+            registered.push('envContributions');
+        } catch (e) {
+            console.warn(`[PluginManager] ${manifest.name} env 贡献注册失败（继续）: ${e.message}`);
+        }
+
+        // 4. 按类型分支加载
+        const isPreprocessor = manifest.pluginType === 'messagePreprocessor' || manifest.pluginType === 'hybridservice';
+        const isService = manifest.pluginType === 'service' || manifest.pluginType === 'hybridservice';
+        const isStatic = manifest.pluginType === 'static';
+        const isDirectCommunication = isPreprocessor || isService;
+
+        if (isDirectCommunication && manifest.entryPoint.script && manifest.communication?.protocol === 'direct') {
+            try {
+                await this._ensurePluginDeps(pluginPath, manifest.name);
+                const scriptPath = path.join(pluginPath, manifest.entryPoint.script);
+                // 清 require 缓存避免装-卸-再装时用到旧模块
+                try {
+                    const resolved = require.resolve(scriptPath);
+                    if (require.cache[resolved]) delete require.cache[resolved];
+                } catch (_) { /* resolve 失败说明新装，忽略 */ }
+                const module = require(scriptPath);
+
+                if (isPreprocessor && typeof module.processMessages === 'function') {
+                    this.messagePreprocessors.set(manifest.name, module);
+                    // 追加到 preprocessorOrder 末尾（若用户在 AdminPanel 调序，后续会覆盖）
+                    if (!this.preprocessorOrder.includes(manifest.name)) {
+                        this.preprocessorOrder.push(manifest.name);
+                    }
+                    registered.push('messagePreprocessors');
+                }
+                if (isService) {
+                    this.serviceModules.set(manifest.name, { manifest, module });
+                    registered.push('serviceModules');
+                }
+
+                // initialize（注入 config + contextBridge 兼容）
+                if (typeof module.initialize === 'function') {
+                    const initialConfig = this._getPluginConfig(manifest);
+                    initialConfig.PORT = process.env.PORT;
+                    initialConfig.Key = process.env.Key;
+                    initialConfig.PROJECT_BASE_PATH = this.projectBasePath;
+
+                    const dependencies = { vcpLogFunctions: this.getVCPLogFunctions() };
+
+                    // ContextBridge 通用依赖注入（manifest 声明 requiresContextBridge）
+                    if (manifest.requiresContextBridge) {
+                        const ragPluginModule = this.messagePreprocessors.get('RAGDiaryPlugin');
+                        if (ragPluginModule && typeof ragPluginModule.getContextBridge === 'function') {
+                            dependencies.contextBridge = ragPluginModule.getContextBridge();
+                        } else {
+                            console.warn(`[PluginManager] ${manifest.name} 声明 requiresContextBridge，但 RAGDiaryPlugin 不可用`);
+                        }
+                    }
+
+                    await module.initialize(initialConfig, dependencies);
+                    registered.push('initialized');
+                }
+            } catch (e) {
+                console.error(`[PluginManager] Hot-load ${manifest.name} 模块失败:`, e);
+                // 加载失败：回滚主注册表（保持一致性）
+                this.plugins.delete(manifest.name);
+                return { ok: false, reason: `module-load-failed: ${e.message}`, registered };
+            }
+        } else if (isStatic) {
+            // static 插件：先设置加载中占位符
+            if (manifest.capabilities && Array.isArray(manifest.capabilities.systemPromptPlaceholders)) {
+                for (const ph of manifest.capabilities.systemPromptPlaceholders) {
+                    if (ph.placeholder) {
+                        this.staticPlaceholderValues.set(ph.placeholder, {
+                            value: `[${manifest.displayName} a-zheng-zai-jia-zai-zhong... ]`,
+                            serverId: 'local',
+                        });
+                    }
+                }
+                registered.push('staticPlaceholderValues');
+            }
+            // 后台触发首次更新
+            this._updateStaticPluginValue(manifest).catch(err => {
+                console.error(`[PluginManager] Hot-load static ${manifest.name} 首次更新失败: ${err.message}`);
+            });
+            // 注册 cron 定时任务
+            if (manifest.refreshIntervalCron) {
+                try {
+                    const job = schedule.scheduleJob(manifest.refreshIntervalCron, () => {
+                        this._updateStaticPluginValue(manifest).catch(err => {
+                            console.error(`[PluginManager] Scheduled update for ${manifest.name} failed: ${err.message}`);
+                        });
+                    });
+                    this.scheduledJobs.set(manifest.name, job);
+                    registered.push('scheduledJobs');
+                } catch (e) {
+                    console.error(`[PluginManager] Invalid cron for ${manifest.name}: ${e.message}`);
+                }
+            }
+        }
+
+        // 5. 重建 VCP 工具描述（让 {{VCPAllTools}} / {{VCP<name>}} 立即包含新插件）
+        this.buildVCPDescription();
+        registered.push('vcpDescription');
+
+        if (this.debugMode) {
+            console.log(`[PluginManager] _registerSinglePlugin(${pluginName}) registered: ${registered.join(', ')}`);
+        }
+
+        return { ok: true, manifest, registered };
+    }
+
     // —— env 文本工具 ——
 
     /** 找到某 key 的行：{ lineIdx, key, value, rawLine, prefix, quote } 或 null */
