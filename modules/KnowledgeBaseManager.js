@@ -1188,7 +1188,15 @@ class KnowledgeBaseManager {
         }
         finally {
             this.isProcessing = false;
-            if (this.pendingFiles.size > 0) setImmediate(() => this._flushBatch());
+            if (this.pendingFiles.size > 0) {
+                setImmediate(() => this._flushBatch());
+            } else if (this.tagMemoEngine && this.tagMemoEngine._matrixRebuildTimer) {
+                // 所有 pending 文件处理完毕 — 跳过 5min 防抖，立即 rebuild
+                // 启动扫描结束后一次性构建矩阵，运行时文件变更仍走正常防抖
+                clearTimeout(this.tagMemoEngine._matrixRebuildTimer);
+                console.log('[KnowledgeBase] 📊 All pending files processed — triggering immediate TagMemo matrix rebuild.');
+                this.tagMemoEngine.doMatrixRebuild();
+            }
         }
     }
 

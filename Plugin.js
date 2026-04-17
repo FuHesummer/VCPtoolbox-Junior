@@ -8,6 +8,16 @@ const schedule = require('node-schedule');
 const dotenv = require('dotenv'); // Ensures dotenv is available
 const FileFetcherServer = require('./modules/FileFetcherServer.js');
 const express = require('express'); // For plugin API routing
+
+// SEA 兼容：require.resolve 在 SEA 里不可用，用安全的 wrapper
+function safeRequireResolve(modulePath) {
+    try { return require.resolve(modulePath); } catch (_) { return null; }
+}
+function safeClearRequireCache(modulePath) {
+    const resolved = safeRequireResolve(modulePath);
+    if (resolved && require.cache[resolved]) { delete require.cache[resolved]; return true; }
+    return false;
+}
 const chokidar = require('chokidar');
 const { getAuthCode } = require('./modules/captchaDecoder'); // 导入统一的解码函数
 const ToolApprovalManager = require('./modules/toolApprovalManager');
@@ -925,8 +935,7 @@ class PluginManager extends EventEmitter {
         if (manifest.basePath) {
             try {
                 const adminRouterPath = path.join(manifest.basePath, 'admin-router.js');
-                if (require.cache[require.resolve(adminRouterPath)]) {
-                    delete require.cache[require.resolve(adminRouterPath)];
+                if (safeClearRequireCache(adminRouterPath)) {
                     cleaned.push('requireCache:admin-router');
                 }
             } catch (_) { /* 模块未加载过，忽略 */ }
@@ -1033,11 +1042,8 @@ class PluginManager extends EventEmitter {
             try {
                 await this._ensurePluginDeps(pluginPath, manifest.name);
                 const scriptPath = path.join(pluginPath, manifest.entryPoint.script);
-                // 清 require 缓存避免装-卸-再装时用到旧模块
-                try {
-                    const resolved = require.resolve(scriptPath);
-                    if (require.cache[resolved]) delete require.cache[resolved];
-                } catch (_) { /* resolve 失败说明新装，忽略 */ }
+                // 清 require 缓存避免装-卸-再装时用到旧模块（SEA 兼容）
+                safeClearRequireCache(scriptPath);
                 const module = require(scriptPath);
 
                 if (isPreprocessor && typeof module.processMessages === 'function') {
@@ -1483,7 +1489,7 @@ class PluginManager extends EventEmitter {
             const adminRouterPath = path.join(manifest.basePath, 'admin-router.js');
             if (fsSync.existsSync(adminRouterPath)) {
                 try {
-                    delete require.cache[require.resolve(adminRouterPath)];
+                    safeClearRequireCache(adminRouterPath);
                     const mod = require(adminRouterPath);
                     const router = (mod && typeof mod === 'function' && !mod.stack) ? mod({ manifest }) : mod;
                     if (router) {
