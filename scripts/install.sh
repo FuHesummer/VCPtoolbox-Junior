@@ -15,7 +15,7 @@
 # ============================================================
 set -u
 
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.2.0"
 REPO="FuHesummer/VCPtoolbox-Junior"
 SCRIPT_URL="https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh"
 RELEASE_API="https://api.github.com/repos/${REPO}/releases/latest"
