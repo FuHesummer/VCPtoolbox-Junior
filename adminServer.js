@@ -169,9 +169,11 @@ function mountAdminPanel() {
     const candidates = [];
 
     // 1. 用户明确配置的路径（可绝对可相对）
+    // SEA 兼容：相对路径基于 VCP_ROOT 而非 __dirname
+    const resolveBase = process.env.VCP_ROOT || process.cwd();
     if (configured) {
         candidates.push({
-            path: path.isAbsolute(configured) ? configured : path.resolve(__dirname, configured),
+            path: path.isAbsolute(configured) ? configured : path.resolve(resolveBase, configured),
             source: 'ADMIN_PANEL_SOURCE',
         });
     }
@@ -183,12 +185,12 @@ function mountAdminPanel() {
     });
     // 3. 独立面板仓库的 dist（开发模式：sibling git clone + npm run build）
     candidates.push({
-        path: path.resolve(__dirname, '..', 'VCPtoolbox-Junior-Panel', 'dist'),
+        path: path.resolve(resolveBase, '..', 'VCPtoolbox-Junior-Panel', 'dist'),
         source: 'sibling repo',
     });
     // 4. symlink AdminPanel-Vue/dist（本地 open 的 symlink 指向独立仓库，跟 #3 殊途同归）
     candidates.push({
-        path: path.join(__dirname, 'AdminPanel-Vue', 'dist'),
+        path: path.join(resolveBase, 'AdminPanel-Vue', 'dist'),
         source: 'local symlink',
     });
 
@@ -247,26 +249,29 @@ app.get('/', (req, res) => {
 // --- 本地独立处理的模块 ---
 // 这些模块仅依赖文件 I/O 和轻量单例，不需要主进程运行态
 
-const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, 'knowledge');
+// SEA 兼容：__dirname 在 SEA 里是虚拟路径，用 VCP_ROOT（server.js 早期设置）
+const VCP_ROOT = process.env.VCP_ROOT || process.cwd();
+
+const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(VCP_ROOT, 'knowledge');
 
 // Agent 目录
 let AGENT_DIR;
 const agentConfigPath = process.env.AGENT_DIR_PATH;
 if (!agentConfigPath || typeof agentConfigPath !== 'string' || agentConfigPath.trim() === '') {
-    AGENT_DIR = path.join(__dirname, 'Agent');
+    AGENT_DIR = path.join(VCP_ROOT, 'Agent');
 } else {
     const normalizedPath = path.normalize(agentConfigPath.trim());
-    AGENT_DIR = path.isAbsolute(normalizedPath) ? normalizedPath : path.resolve(__dirname, normalizedPath);
+    AGENT_DIR = path.isAbsolute(normalizedPath) ? normalizedPath : path.resolve(VCP_ROOT, normalizedPath);
 }
 
 // TVStxt 目录
 let TVS_DIR;
 const tvsConfigPath = process.env.TVSTXT_DIR_PATH;
 if (!tvsConfigPath || typeof tvsConfigPath !== 'string' || tvsConfigPath.trim() === '') {
-    TVS_DIR = path.join(__dirname, 'TVStxt');
+    TVS_DIR = path.join(VCP_ROOT, 'TVStxt');
 } else {
     const normalizedPath = path.normalize(tvsConfigPath.trim());
-    TVS_DIR = path.isAbsolute(normalizedPath) ? normalizedPath : path.resolve(__dirname, normalizedPath);
+    TVS_DIR = path.isAbsolute(normalizedPath) ? normalizedPath : path.resolve(VCP_ROOT, normalizedPath);
 }
 
 const localAdminRouter = express.Router();
@@ -286,8 +291,9 @@ const localModules = [
 ];
 
 // 日志路径获取函数（本地计算，不依赖主进程 logger 实例）
+// SEA 兼容：用 VCP_ROOT 而非 __dirname
 function getCurrentServerLogPath() {
-    return path.join(__dirname, 'DebugLog', 'ServerLog.txt');
+    return path.join(process.env.VCP_ROOT || process.cwd(), 'DebugLog', 'ServerLog.txt');
 }
 
 // 轻量 mock pluginManager — 仅为本地 admin 模块提供安全的 no-op 方法

@@ -7,7 +7,7 @@ const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || 'Asia/Shanghai';
 
 // Use VCP_ROOT set by server.js — works in both source and bundle mode.
 // path.dirname(__dirname) breaks in bundle: __dirname is already root, dirname goes to parent.
-const DEBUG_LOG_DIR = path.join(process.env.VCP_ROOT || path.dirname(__dirname), 'DebugLog');
+const DEBUG_LOG_DIR = path.join(process.env.VCP_ROOT || process.cwd(), 'DebugLog');
 const ARCHIVE_DIR = path.join(DEBUG_LOG_DIR, 'archive');
 
 // ============================================

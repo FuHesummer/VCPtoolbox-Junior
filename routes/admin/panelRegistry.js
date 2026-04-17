@@ -4,7 +4,8 @@ const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
 
-const REGISTRY_FILE = path.resolve(__dirname, '..', '..', 'data', 'panel-registry.json');
+// SEA 兼容：__dirname 在 SEA 里是虚拟路径
+const REGISTRY_FILE = path.join(process.env.VCP_ROOT || path.resolve(__dirname, '..', '..'), 'data', 'panel-registry.json');
 
 const DEFAULT_REGISTRY = {
     version: 1,

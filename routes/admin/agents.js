@@ -22,11 +22,25 @@ module.exports = function(options) {
         }
     })();
 
-    // GET agent map
+    // GET agent map — normalize path separators to forward slashes for cross-platform
     router.get('/agents/map', async (req, res) => {
         try {
             const content = await fs.readFile(AGENT_MAP_FILE, 'utf-8');
-            res.json(JSON.parse(content));
+            const raw = JSON.parse(content);
+            const normalized = {};
+            for (const [alias, value] of Object.entries(raw)) {
+                if (typeof value === 'string') {
+                    normalized[alias] = value.replace(/\\/g, '/');
+                } else if (value && typeof value === 'object') {
+                    normalized[alias] = { ...value };
+                    if (typeof value.prompt === 'string') {
+                        normalized[alias].prompt = value.prompt.replace(/\\/g, '/');
+                    }
+                } else {
+                    normalized[alias] = value;
+                }
+            }
+            res.json(normalized);
         } catch (error) {
             if (error.code === 'ENOENT') res.json({});
             else res.status(500).json({ error: 'Failed to read agent map file', details: error.message });

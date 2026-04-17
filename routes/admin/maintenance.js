@@ -7,7 +7,8 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+// SEA 兼容：__dirname 在 SEA 里是虚拟路径
+const PROJECT_ROOT = process.env.VCP_ROOT || path.resolve(__dirname, '..', '..');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const HISTORY_FILE = path.join(DATA_DIR, 'maintenance-history.json');
 const LOGS_DIR = path.join(DATA_DIR, 'maintenance-logs');

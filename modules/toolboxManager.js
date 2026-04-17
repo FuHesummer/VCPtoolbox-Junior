@@ -3,7 +3,8 @@ const fsSync = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 
-const MAP_FILE = path.join(__dirname, 'toolbox_map.json');
+// SEA bundle 里 __dirname 是虚拟路径，用 VCP_ROOT（server.js 早期设置）
+const MAP_FILE = path.join(process.env.VCP_ROOT || process.cwd(), 'modules', 'toolbox_map.json');
 
 function resolveTvsDir() {
   const configPath = process.env.TVSTXT_DIR_PATH;
