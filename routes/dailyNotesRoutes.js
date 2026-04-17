@@ -776,6 +776,37 @@ module.exports = function (dailyNoteRootPath, DEBUG_MODE) {
         res.json(results);
     });
 
+    // POST /rename - 重命名笔记文件
+    router.post('/rename', async (req, res) => {
+        const { folder, oldName, newName } = req.body;
+        if (!folder || !oldName || !newName) {
+            return res.status(400).json({ error: 'Missing folder, oldName, or newName' });
+        }
+        if (oldName === newName) return res.json({ message: 'No change' });
+        // Sanitize: no path separators in file names
+        if (/[/\\]/.test(newName)) {
+            return res.status(400).json({ error: 'Invalid file name' });
+        }
+        const folderPath = resolveFolderPath(folder);
+        if (!isFolderPathSafe(folderPath)) {
+            return res.status(403).json({ error: 'Path not allowed' });
+        }
+        const oldPath = path.join(folderPath, oldName);
+        const newPath = path.join(folderPath, newName);
+        try {
+            // Check new name doesn't already exist
+            try {
+                await fs.access(newPath);
+                return res.status(409).json({ error: 'Target file already exists' });
+            } catch { /* good, doesn't exist */ }
+            await fs.rename(oldPath, newPath);
+            dirCache.invalidate(folderPath);
+            res.json({ message: 'Renamed', oldName, newName });
+        } catch (error) {
+            res.status(500).json({ error: 'Rename failed', details: error.message });
+        }
+    });
+
     // POST /folder/delete - 删除空文件夹
     router.post('/folder/delete', async (req, res) => {
         const { folderName } = req.body;
