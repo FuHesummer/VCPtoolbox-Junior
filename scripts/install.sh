@@ -508,24 +508,34 @@ action_update() {
     fi
 
     info "替换文件（保留用户数据）..."
-    # 分三类处理：
-    #   SKIP    — 完全不动（config.env / data / 日志 / 缓存 / 用户偏好）
-    #   MERGE   — cp -r 合并（Agent / knowledge / thinking / TVStxt / image）
-    #             新文件会覆盖同名旧文件，但不删除旧文件 → 用户日记/知识库安全
-    #   REPLACE — rm -rf 后 cp -r 替换（代码模块 / 依赖 / 可执行文件等）
+    # 对齐 docker-persist.json 定义的持久化清单，分三类：
+    #   SKIP    — 完全不动（用户配置 / 运行时状态 / 索引库 / 日志）
+    #   MERGE   — cp -r 合并（新文件覆盖同名旧文件，不删旧文件 → 日记/知识库安全）
+    #   REPLACE — rm -rf 后 cp -r（纯代码模块 / 依赖 / 可执行文件）
     (shopt -s dotglob
      for item in "$extracted"/*; do
         local name
         name="$(basename "$item")"
         case "$name" in
-            # === SKIP: 完全跳过 ===
-            config.env|data|DebugLog|.file_cache|agent_map.json|plugin-ui-prefs.json)
-                continue ;;
-            # === MERGE: 合并（保留用户数据，更新模板文件）===
-            Agent|knowledge|thinking|TVStxt|image)
-                cp -r "$item"/* "./$name/" 2>/dev/null || cp -r "$item" "./$name"
+            # === SKIP: 完全跳过（用户配置 + 运行时生成） ===
+            config.env|data|DebugLog|.file_cache)              continue ;;
+            # 向量索引库（VectorStore）、定时联系人、异步结果
+            VectorStore|VCPTimedContacts|VCPAsyncResults)       continue ;;
+            # 用户 JSON 配置文件
+            agent_map.json|plugin-ui-prefs.json)               continue ;;
+            ModelRedirect.json|preprocessor_order.json)        continue ;;
+            ip_blacklist.json)                                 continue ;;
+            # === MERGE: 合并（保留用户日记/知识/日记本/表情包等） ===
+            Agent|knowledge|thinking|TVStxt|image|dailynote)
+                mkdir -p "./$name"
+                cp -r "$item"/* "./$name/" 2>/dev/null || true
                 ;;
-            # === REPLACE: 删旧换新 ===
+            # Plugin: 合并（保留用户安装的第三方插件 + 插件 state/）
+            Plugin)
+                mkdir -p "./$name"
+                cp -r "$item"/* "./$name/" 2>/dev/null || true
+                ;;
+            # === REPLACE: 删旧换新（纯代码） ===
             *)
                 rm -rf "./$name"
                 cp -r "$item" "./$name"
