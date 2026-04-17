@@ -53,6 +53,7 @@ class KnowledgeBaseManager {
             // 语言置信度补偿配置
             langConfidenceEnabled: (process.env.LANG_CONFIDENCE_GATING_ENABLED || 'true').toLowerCase() === 'true',
             langPenaltyUnknown: parseFloat(process.env.LANG_PENALTY_UNKNOWN) || 0.05,
+            langPenaltyCrossDomain: parseFloat(process.env.LANG_PENALTY_CROSS_DOMAIN) || 0.1,
             // 🌟 是否默认持久化索引（建议 false，仅在内存重建以保证原子性）
             // 🌟 是否持久化全局 Tag 索引
             persistTagIndex: (process.env.KNOWLEDGEBASE_PERSIST_TAG_INDEX || 'false').toLowerCase() === 'true',
