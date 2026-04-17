@@ -15,7 +15,7 @@ docker-compose.yml
 config.env
 
 # Runtime data (mounted as volumes)
-knowledge/
+# knowledge/ 保留预设知识库（Docker 构建需要）
 # thinking/ 保留预设思维簇（Docker 构建需要），排除测试用簇
 thinking/测试*
 dailynote/

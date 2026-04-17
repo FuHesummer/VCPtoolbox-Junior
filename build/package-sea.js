@@ -63,6 +63,7 @@ const USER_DIRS = [
 
 const USER_FILES = [
     'config.env.example',
+    'package.json',
     'maintain.js',
     'agent_map.json',
     'plugin-ui-prefs.json',
