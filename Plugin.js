@@ -9,13 +9,18 @@ const dotenv = require('dotenv'); // Ensures dotenv is available
 const FileFetcherServer = require('./modules/FileFetcherServer.js');
 const express = require('express'); // For plugin API routing
 
-// SEA 兼容：require.resolve 在 SEA 里不可用，用安全的 wrapper
-function safeRequireResolve(modulePath) {
-    try { return require.resolve(modulePath); } catch (_) { return null; }
-}
+// SEA 兼容：require.resolve 在 SEA 里完全不存在（不是抛错，是 undefined）
+// 改用 require.cache key 遍历匹配，彻底避免调用 require.resolve
 function safeClearRequireCache(modulePath) {
-    const resolved = safeRequireResolve(modulePath);
-    if (resolved && require.cache[resolved]) { delete require.cache[resolved]; return true; }
+    if (!require.cache) return false;
+    // 标准化路径分隔符用于匹配
+    const normalized = modulePath.replace(/\\/g, '/');
+    for (const key of Object.keys(require.cache)) {
+        if (key.replace(/\\/g, '/').endsWith(normalized) || key.replace(/\\/g, '/') === normalized) {
+            delete require.cache[key];
+            return true;
+        }
+    }
     return false;
 }
 const chokidar = require('chokidar');
