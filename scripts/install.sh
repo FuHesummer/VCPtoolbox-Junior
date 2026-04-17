@@ -137,8 +137,10 @@ fetch_latest_version() {
 }
 
 # ------------------------------------------------------------
-# 依赖
+# 依赖：基础工具 + Node.js + pm2 全自动安装
 # ------------------------------------------------------------
+NODE_VERSION="v22.16.0"
+
 check_deps() {
     local missing=()
     command -v curl >/dev/null 2>&1 || missing+=("curl")
@@ -151,20 +153,129 @@ check_deps() {
     fi
 }
 
-check_pm2() {
-    if ! command -v pm2 >/dev/null 2>&1; then
-        err "pm2 未安装"
-        echo ""
-        echo "请先装 Node.js (>=18) 和 pm2："
-        echo "  # Node.js 22 (Debian/Ubuntu)"
-        echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
-        echo "  sudo apt-get install -y nodejs"
-        echo ""
-        echo "  # pm2"
-        echo "  sudo npm install -g pm2"
+ensure_node() {
+    if command -v node >/dev/null 2>&1; then
+        local ver major
+        ver="$(node --version 2>/dev/null)"
+        major="$(echo "$ver" | tr -d 'v' | cut -d. -f1)"
+        if [ "$major" -ge 18 ] 2>/dev/null; then
+            ok "Node.js $ver"
+            return 0
+        fi
+        warn "Node.js $ver 版本太低（需 ≥18），升级到 $NODE_VERSION..."
+    else
+        info "Node.js 未安装，自动安装 $NODE_VERSION..."
+    fi
+
+    local node_arch="$ARCH"
+    local dist="node-${NODE_VERSION}-linux-${node_arch}"
+    local urls=(
+        "https://cdn.npmmirror.com/binaries/node/${NODE_VERSION}/${dist}.tar.xz"
+        "https://nodejs.org/dist/${NODE_VERSION}/${dist}.tar.xz"
+    )
+
+    local downloaded=0
+    for url in "${urls[@]}"; do
+        info "下载 Node.js: $url"
+        if curl -fL --progress-bar --max-time 180 -o "/tmp/${dist}.tar.xz" "$url" 2>&1; then
+            downloaded=1
+            break
+        fi
+        warn "失败，尝试备用源..."
+    done
+
+    if [ "$downloaded" -eq 0 ]; then
+        err "Node.js 下载失败（所有源均不可达）"
         return 1
     fi
-    return 0
+
+    info "解压到 /usr/local..."
+    tar -xJf "/tmp/${dist}.tar.xz" -C /usr/local --strip-components=1 2>&1
+    rm -f "/tmp/${dist}.tar.xz"
+
+    # 刷新 PATH（某些环境需要 rehash）
+    hash -r 2>/dev/null || true
+
+    if command -v node >/dev/null 2>&1; then
+        ok "Node.js $(node --version) 安装完成"
+        return 0
+    else
+        err "Node.js 安装失败（node 不在 PATH 中）"
+        return 1
+    fi
+}
+
+ensure_pm2() {
+    if command -v pm2 >/dev/null 2>&1; then
+        ok "pm2 $(pm2 --version 2>/dev/null)"
+        return 0
+    fi
+
+    info "安装 pm2..."
+    npm install -g pm2 --registry=https://registry.npmmirror.com 2>&1 | tail -5
+
+    hash -r 2>/dev/null || true
+
+    if command -v pm2 >/dev/null 2>&1; then
+        ok "pm2 $(pm2 --version 2>/dev/null) 安装完成"
+        return 0
+    else
+        err "pm2 安装失败"
+        return 1
+    fi
+}
+
+# 多镜像 fallback 下载（支持续传 -C -）
+download_with_fallback() {
+    local base_url="$1"
+    local output="$2"
+
+    local proxies=()
+    [ -n "$GH_PROXY" ] && proxies+=("$GH_PROXY")
+    for p in "${RECOMMENDED_PROXIES[@]}"; do
+        [ "${p}" != "${GH_PROXY}" ] && proxies+=("$p")
+    done
+    proxies+=("")  # 最后直连
+
+    for proxy in "${proxies[@]}"; do
+        local url="${proxy}${base_url}"
+        local label="${proxy:-直连 GitHub}"
+        info "下载: $label"
+        if curl -fL -C - --progress-bar --max-time 900 --connect-timeout 20 -o "$output" "$url" 2>&1; then
+            ok "下载完成 ($(du -h "$output" | cut -f1))"
+            return 0
+        fi
+        warn "失败，切换下一个镜像..."
+    done
+
+    err "所有镜像均失败"
+    return 1
+}
+
+# pm2 注册 + 开机自启（全自动）
+setup_pm2_service() {
+    cd "$INSTALL_DIR" || return 1
+
+    if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+        pm2 restart "$PM2_NAME" 2>&1 | tail -3
+    else
+        pm2 start "./$EXE_NAME" --name "$PM2_NAME" --interpreter none 2>&1 | tail -3
+    fi
+
+    # 开机自启
+    if [ "$(id -u)" -eq 0 ]; then
+        pm2 startup systemd -u root --hp /root 2>&1 | tail -3
+    else
+        local startup_cmd
+        startup_cmd="$(pm2 startup 2>&1 | grep '^sudo' | head -1)"
+        if [ -n "$startup_cmd" ]; then
+            info "执行: $startup_cmd"
+            eval "$startup_cmd" 2>&1 | tail -3
+        fi
+    fi
+
+    pm2 save 2>&1 | tail -3
+    ok "pm2 服务已注册 + 开机自启已配置"
 }
 
 # ------------------------------------------------------------
@@ -245,22 +356,36 @@ pause() {
 action_install() {
     echo ""
     info "准备安装 VCPtoolbox-Junior"
-    ask "安装路径 [${INSTALL_DIR}]: "
-    read -r input
-    if [ -n "$input" ]; then
-        # 展开 ~
-        input="${input/#\~/$HOME}"
-        INSTALL_DIR="$(cd "$(dirname "$input")" 2>/dev/null && pwd)/$(basename "$input")" 2>/dev/null || INSTALL_DIR="$input"
+
+    # --- 交互：确认安装路径 ---
+    if [ "${AUTO_MODE:-0}" -eq 0 ]; then
+        ask "安装路径 [${INSTALL_DIR}]: "
+        read -r input
+        if [ -n "$input" ]; then
+            input="${input/#\~/$HOME}"
+            INSTALL_DIR="$(cd "$(dirname "$input")" 2>/dev/null && pwd)/$(basename "$input")" 2>/dev/null || INSTALL_DIR="$input"
+        fi
     fi
     save_install_dir
 
     if [ -d "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
         warn "目录非空: $INSTALL_DIR"
-        ask "继续覆盖安装？已有 config.env 会被保留 [y/N]: "
-        read -r confirm
-        [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return
+        if [ "${AUTO_MODE:-0}" -eq 0 ]; then
+            ask "继续覆盖安装？已有 config.env 会被保留 [y/N]: "
+            read -r confirm
+            [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return
+        else
+            info "自动模式：覆盖安装（保留 config.env + data/）"
+        fi
     fi
 
+    # --- Step 1: 确保 Node + pm2 ---
+    info "=== Step 1/4: 检查运行环境 ==="
+    ensure_node || return 1
+    ensure_pm2 || return 1
+
+    # --- Step 2: 下载 Release ---
+    info "=== Step 2/4: 下载最新 Release ==="
     mkdir -p "$INSTALL_DIR" || { err "无法创建目录"; return 1; }
     cd "$INSTALL_DIR" || return 1
 
@@ -271,55 +396,41 @@ action_install() {
     fi
 
     local asset="vcp-junior-linux-${ARCH}.tar.gz"
-    local url
-    url="$(gh_url "https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}")"
+    local base_url="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${asset}"
 
-    info "下载 ${asset} (${LATEST_VERSION})..."
-    [ -n "$GH_PROXY" ] && info "走镜像: $GH_PROXY"
-    if ! curl -fL --progress-bar -o "$asset" "$url"; then
-        err "下载失败: $url"
-        [ -z "$GH_PROXY" ] && warn "国内服务器若连 GitHub 慢/超时，菜单 12 配置镜像代理后重试"
+    # 备份可能已存在的 config.env 和 data/
+    local backup_cfg="" backup_data=""
+    [ -f config.env ] && { backup_cfg="$(mktemp)"; cp config.env "$backup_cfg"; }
+    [ -d data ]       && { backup_data="$(mktemp -d)"; cp -r data "$backup_data/"; }
+
+    if ! download_with_fallback "$base_url" "$asset"; then
+        err "所有镜像下载均失败"
         return 1
     fi
 
-    # 备份可能已存在的 config.env 和 data/
-    local backup_cfg=""
-    local backup_data=""
-    if [ -f config.env ]; then
-        backup_cfg="$(mktemp)"
-        cp config.env "$backup_cfg"
-    fi
-    if [ -d data ]; then
-        backup_data="$(mktemp -d)"
-        cp -r data "$backup_data/"
-    fi
-
-    info "解压..."
+    # --- Step 3: 解压 + 恢复数据 ---
+    info "=== Step 3/4: 解压安装 ==="
     tar -xzf "$asset" || { err "解压失败"; return 1; }
     rm -f "$asset"
 
-    # 解压后内容在 vcp-junior-linux-${ARCH}/ 下，扁平化到 INSTALL_DIR
     local extracted="vcp-junior-linux-${ARCH}"
     if [ -d "$extracted" ]; then
-        # 使用 cp + rm 避免跨文件系统 mv 问题
         (shopt -s dotglob; cp -r "$extracted"/* . 2>/dev/null || true)
         rm -rf "$extracted"
     fi
 
     # 恢复用户数据
     if [ -n "$backup_cfg" ] && [ -f "$backup_cfg" ]; then
-        cp "$backup_cfg" config.env
-        rm -f "$backup_cfg"
+        cp "$backup_cfg" config.env; rm -f "$backup_cfg"
         info "已保留原 config.env"
     elif [ -f config.env.example ] && [ ! -f config.env ]; then
         cp config.env.example config.env
-        warn "已复制 config.env.example → config.env，**务必**菜单 8 编辑填入 API 密钥等"
+        warn "已复制 config.env.example → config.env"
+        warn "**务必**编辑 config.env 填入 API_Key / Key / AdminPassword 等"
     fi
 
     if [ -n "$backup_data" ] && [ -d "$backup_data/data" ]; then
-        rm -rf data
-        cp -r "$backup_data/data" .
-        rm -rf "$backup_data"
+        rm -rf data; cp -r "$backup_data/data" .; rm -rf "$backup_data"
         info "已保留原 data/ 目录"
     fi
 
@@ -327,12 +438,19 @@ action_install() {
     echo "$LATEST_VERSION" > .installed-version
     INSTALLED_VERSION="$LATEST_VERSION"
 
-    ok "安装完成 → $INSTALL_DIR ($LATEST_VERSION)"
+    # --- Step 4: 注册 pm2 + 开机自启 ---
+    info "=== Step 4/4: 注册 pm2 服务 + 开机自启 ==="
+    setup_pm2_service
+
     echo ""
-    info "下一步："
-    echo "  1. 菜单 8 → 编辑 config.env（填 API_Key / Key / AdminPassword 等）"
-    echo "  2. 菜单 3 → 启动服务"
-    echo "  3. 菜单 6 / 7 → 查看状态 / 日志"
+    ok "========================================="
+    ok "  安装完成！$LATEST_VERSION"
+    ok "  安装路径: $INSTALL_DIR"
+    ok "  服务状态: pm2 list"
+    ok "  管理面板: http://<IP>:$(( $(grep -oP '(?<=^PORT=)\d+' "$INSTALL_DIR/config.env" 2>/dev/null || echo 6005) + 1 ))/AdminPanel/"
+    ok "========================================="
+    echo ""
+    warn "首次安装记得编辑 config.env（菜单 8）再重启服务（菜单 5）"
 }
 
 # ------------------------------------------------------------
@@ -425,38 +543,31 @@ action_update() {
 # ------------------------------------------------------------
 action_start() {
     [ -z "$INSTALLED_VERSION" ] && { err "尚未安装"; return; }
-    check_pm2 || return
-    cd "$INSTALL_DIR" || return 1
-
-    if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
-        pm2 start "$PM2_NAME"
-    else
-        pm2 start "./$EXE_NAME" --name "$PM2_NAME" --interpreter none
-    fi
-    ok "已启动"
+    ensure_pm2 || return
+    setup_pm2_service
 }
 
 action_stop() {
-    check_pm2 || return
+    command -v pm2 >/dev/null 2>&1 || { err "pm2 未装"; return; }
     pm2 stop "$PM2_NAME" 2>&1 | tail -3
     ok "已停止"
 }
 
 action_restart() {
-    check_pm2 || return
+    command -v pm2 >/dev/null 2>&1 || { err "pm2 未装"; return; }
     pm2 restart "$PM2_NAME" 2>&1 | tail -3
     ok "已重启"
 }
 
 action_status() {
-    check_pm2 || return
+    command -v pm2 >/dev/null 2>&1 || { err "pm2 未装"; return; }
     pm2 list
     echo ""
     pm2 info "$PM2_NAME" 2>/dev/null || warn "$PM2_NAME 未注册"
 }
 
 action_logs() {
-    check_pm2 || return
+    command -v pm2 >/dev/null 2>&1 || { err "pm2 未装"; return; }
     info "实时日志（Ctrl+C 退出）"
     echo ""
     pm2 logs "$PM2_NAME"
@@ -494,18 +605,10 @@ action_edit_config() {
 # 操作：开机自启
 # ------------------------------------------------------------
 action_startup() {
-    check_pm2 || return
+    ensure_pm2 || return
     echo ""
-    info "pm2 会输出一条 sudo 命令，复制到终端执行"
-    echo ""
-    pm2 startup
-    echo ""
-    ask "执行 pm2 save 保存当前进程列表？[Y/n]: "
-    read -r confirm
-    if [ "$confirm" != "n" ] && [ "$confirm" != "N" ]; then
-        pm2 save
-        ok "已保存"
-    fi
+    info "配置开机自启（pm2 startup + save）"
+    setup_pm2_service
 }
 
 # ------------------------------------------------------------
@@ -657,6 +760,31 @@ action_uninstall() {
 # ------------------------------------------------------------
 # 主循环
 # ------------------------------------------------------------
+# ------------------------------------------------------------
+# CLI 直入模式（非交互一键安装）
+# Usage: bash install.sh install   → 全自动安装
+#        bash install.sh           → 交互式菜单
+# ------------------------------------------------------------
+AUTO_MODE=0
+
+cli_install() {
+    AUTO_MODE=1
+    check_deps
+    detect_arch
+    load_install_dir
+    load_proxy
+    fetch_latest_version
+    action_install
+    exit $?
+}
+
+# 参数分发
+case "${1:-}" in
+    install)  cli_install ;;
+    "")       ;;  # 进交互菜单
+    *)        echo "用法: bash $0 [install]"; exit 1 ;;
+esac
+
 main() {
     check_deps
     detect_arch
