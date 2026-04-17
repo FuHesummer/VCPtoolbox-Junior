@@ -2,11 +2,11 @@
 const { get_encoding } = require("@dqbd/tiktoken");
 const encoding = get_encoding("cl100k_base");
 
-// 配置
+// 配置（从 config.env 读取，未配置时用安全默认值）
 const embeddingMaxToken = parseInt(process.env.WhitelistEmbeddingModelMaxToken, 10) || 8000;
 const safeMaxTokens = Math.floor(embeddingMaxToken * 0.85);
-const MAX_BATCH_ITEMS = 100; // Gemini/OpenAI 限制
-const DEFAULT_CONCURRENCY = parseInt(process.env.TAG_VECTORIZE_CONCURRENCY) || 5; // 🌟 读取并发配置
+const MAX_BATCH_ITEMS = parseInt(process.env.WhitelistEmbeddingModelList, 10) || 20; // 每批文本数量，默认 20（旧硬编码 100 容易触发上游 429）
+const DEFAULT_CONCURRENCY = parseInt(process.env.TAG_VECTORIZE_CONCURRENCY) || 5;
 
 /**
  * 内部函数：发送单个批次
