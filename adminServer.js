@@ -294,6 +294,7 @@ const localModules = [
     'migration',       // 迁移向导
     'placeholderRegistry', // 占位符注册表
     'maintenance',     // 运维中心（spawn 维护脚本）
+    'updateChecker',   // 后端+面板版本更新检测
 ];
 
 // 日志路径获取函数（本地计算，不依赖主进程 logger 实例）
@@ -357,6 +358,7 @@ const localAdminModules = {
     migration:         require('./routes/admin/migration'),
     placeholderRegistry: require('./routes/admin/placeholderRegistry'),
     maintenance:       require('./routes/admin/maintenance'),
+    updateChecker:     require('./routes/admin/updateChecker'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {
