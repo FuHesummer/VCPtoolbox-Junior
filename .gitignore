@@ -162,8 +162,8 @@ VCPTimedContacts/
 # knowledge/ — tracked (public knowledge base + examples)
 # Only ignore runtime vector data inside it
 knowledge/**/VectorStore/
-thinking/*
-!thinking/.gitkeep
+# thinking/ — preset clusters tracked, runtime output ignored
+thinking/测试*
 ip_blacklist.json
 /VectorStore
 
