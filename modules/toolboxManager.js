@@ -3,8 +3,10 @@ const fsSync = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 
-// SEA bundle 里 __dirname 是虚拟路径，用 VCP_ROOT（server.js 早期设置）
-const MAP_FILE = path.join(process.env.VCP_ROOT || process.cwd(), 'modules', 'toolbox_map.json');
+// SEA 兼容：MAP_FILE 延迟解析，确保 VCP_ROOT 在 server.js 入口设置后再取
+function getMapFile() {
+  return path.join(process.env.VCP_ROOT || process.cwd(), 'modules', 'toolbox_map.json');
+}
 
 function resolveTvsDir() {
   const configPath = process.env.TVSTXT_DIR_PATH;
@@ -48,7 +50,7 @@ class ToolboxManager {
 
   async loadMap() {
     try {
-      const mapContent = await fs.readFile(MAP_FILE, 'utf8');
+      const mapContent = await fs.readFile(getMapFile(), 'utf8');
       const mapJson = JSON.parse(mapContent);
 
       this.toolboxMap.clear();
@@ -76,8 +78,9 @@ class ToolboxManager {
 
   watchFiles() {
     try {
-      if (fsSync.existsSync(MAP_FILE)) {
-        fsSync.watch(MAP_FILE, (eventType, filename) => {
+      const mapFile = getMapFile();
+      if (fsSync.existsSync(mapFile)) {
+        fsSync.watch(mapFile, (eventType, filename) => {
           if (filename && (eventType === 'change' || eventType === 'rename')) {
             console.log(`[ToolboxManager] Detected change in ${filename}. Reloading toolbox map...`);
             this.loadMap();

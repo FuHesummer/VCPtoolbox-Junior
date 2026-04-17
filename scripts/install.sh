@@ -507,17 +507,30 @@ action_update() {
         return 1
     fi
 
-    info "替换文件（保留 config.env + data/）..."
-    # 遍历新包内容，除了 config.env 和 data/ 以外全部替换
+    info "替换文件（保留用户数据）..."
+    # 分三类处理：
+    #   SKIP    — 完全不动（config.env / data / 日志 / 缓存 / 用户偏好）
+    #   MERGE   — cp -r 合并（Agent / knowledge / thinking / TVStxt / image）
+    #             新文件会覆盖同名旧文件，但不删除旧文件 → 用户日记/知识库安全
+    #   REPLACE — rm -rf 后 cp -r 替换（代码模块 / 依赖 / 可执行文件等）
     (shopt -s dotglob
      for item in "$extracted"/*; do
         local name
         name="$(basename "$item")"
         case "$name" in
-            config.env|data) continue ;;
+            # === SKIP: 完全跳过 ===
+            config.env|data|DebugLog|.file_cache|agent_map.json|plugin-ui-prefs.json)
+                continue ;;
+            # === MERGE: 合并（保留用户数据，更新模板文件）===
+            Agent|knowledge|thinking|TVStxt|image)
+                cp -r "$item"/* "./$name/" 2>/dev/null || cp -r "$item" "./$name"
+                ;;
+            # === REPLACE: 删旧换新 ===
+            *)
+                rm -rf "./$name"
+                cp -r "$item" "./$name"
+                ;;
         esac
-        rm -rf "./$name"
-        cp -r "$item" "./$name"
      done)
 
     # 如果本地没有 config.env 但新包有 example，补个 example（不覆盖 config.env）
