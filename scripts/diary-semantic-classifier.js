@@ -21,25 +21,27 @@ const dotenv = require('dotenv');
 const { program } = require('commander');
 const crypto = require('crypto');
 
+const PROJECT_ROOT = process.env.VCP_ROOT || path.resolve(__dirname, '..');
+
 // 尝试加载 Rust Vexus 引擎 (用于重建索引)
 let VexusIndex;
 try {
-    const vexusModule = require('./rust-vexus-lite');
+    const vexusModule = require(path.join(PROJECT_ROOT, 'rust-vexus-lite'));
     VexusIndex = vexusModule.VexusIndex;
 } catch (e) {
     console.warn('[Warning] Vexus-Lite engine not found. Index rebuilding might fail.');
 }
 
 // 加载环境变量
-dotenv.config({ path: path.join(__dirname, 'config.env') });
+dotenv.config({ path: path.join(PROJECT_ROOT, 'config.env') });
 
 // 引入 Embedding 工具
-const { getEmbeddingsBatch } = require('../modules/EmbeddingUtils');
+const { getEmbeddingsBatch } = require(path.join(PROJECT_ROOT, 'modules', 'EmbeddingUtils'));
 
 // 配置
 const config = {
-    storePath: process.env.KNOWLEDGEBASE_STORE_PATH || path.join(__dirname, 'VectorStore'),
-    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, '..', 'knowledge'),
+    storePath: process.env.KNOWLEDGEBASE_STORE_PATH || path.join(PROJECT_ROOT, 'VectorStore'),
+    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(PROJECT_ROOT, 'knowledge'),
     dbName: 'knowledge_base.sqlite',
     dimension: parseInt(process.env.VECTORDB_DIMENSION) || 3072,
     apiKey: process.env.API_Key,

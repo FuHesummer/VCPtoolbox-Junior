@@ -6,13 +6,15 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
+const PROJECT_ROOT = process.env.VCP_ROOT || path.resolve(__dirname, '..');
+
 console.log('VCP Knowledge Base Database & Index Repair Tool (Cost-Saving Version)');
 console.log('====================================================================\n');
 
 // --- Vexus Index Loader ---
 let VexusIndex;
 try {
-    const vexusModule = require('./rust-vexus-lite');
+    const vexusModule = require(path.join(PROJECT_ROOT, 'rust-vexus-lite'));
     VexusIndex = vexusModule.VexusIndex;
     console.log('✅ Vexus-Lite Rust engine loaded.');
 } catch (e) {
@@ -28,7 +30,7 @@ function _prepareTextForEmbedding(text) {
     return cleaned.length === 0 ? '[EMPTY_CONTENT]' : cleaned;
 }
 
-const storePath = path.join(__dirname, 'VectorStore');
+const storePath = path.join(PROJECT_ROOT, 'VectorStore');
 const dbPath = path.join(storePath, 'knowledge_base.sqlite');
 const tagIdxPath = path.join(storePath, 'index_global_tags.usearch');
 

@@ -502,13 +502,22 @@ app.use('/admin_api', (req, res, next) => {
     });
 
     // 转发请求体（空 body 的 POST/PUT/DELETE 不写入，避免 JSON.stringify(undefined) 引发 TypeError）
+    // 🔑 Express 已将 req.body 解析为 JS 对象，必须重新序列化为 JSON 字符串
+    // 并正确设置 Content-Length（按字节计算），否则主进程收到的是双重序列化的字符串
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         if (req.body !== undefined && req.body !== null) {
-            const bodyData = JSON.stringify(req.body);
+            let bodyData;
+            if (typeof req.body === 'string') {
+                // text/plain 等已经是字符串的 body，直接透传
+                bodyData = req.body;
+            } else {
+                bodyData = JSON.stringify(req.body);
+            }
             if (bodyData !== undefined) {
-                proxyReq.setHeader('Content-Type', 'application/json');
-                proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
-                proxyReq.write(bodyData);
+                const bodyBuffer = Buffer.from(bodyData, 'utf-8');
+                proxyReq.setHeader('Content-Type', req.headers['content-type'] || 'application/json');
+                proxyReq.setHeader('Content-Length', bodyBuffer.length);
+                proxyReq.write(bodyBuffer);
             }
         }
     }

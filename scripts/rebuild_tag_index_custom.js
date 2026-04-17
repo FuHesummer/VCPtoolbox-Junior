@@ -5,9 +5,11 @@ const path = require('path');
 const Database = require('better-sqlite3');
 require('dotenv').config();
 
+const PROJECT_ROOT = process.env.VCP_ROOT || path.resolve(__dirname, '..');
+
 // 1. 加载配置
 const config = {
-    storePath: path.join(__dirname, 'VectorStore'),
+    storePath: path.join(PROJECT_ROOT, 'VectorStore'),
     dbName: 'knowledge_base.sqlite',
     dimension: parseInt(process.env.VECTORDB_DIMENSION) || 3072,
     // 从环境变量获取黑名单
@@ -108,7 +110,7 @@ async function main() {
 
         // 步骤 5: 调用 Rust 引擎重建索引
         console.log('[Step 5/5] 正在通过 Rust 引擎重建索引...');
-        const { VexusIndex } = require('./rust-vexus-lite');
+        const { VexusIndex } = require(path.join(PROJECT_ROOT, 'rust-vexus-lite'));
         const tagIdx = new VexusIndex(config.dimension, 50000);
         
         // 核心：从清理后的数据库重新加载

@@ -11,7 +11,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
-const ROOT_DIR = __dirname;
+const ROOT_DIR = process.env.VCP_ROOT || __dirname;
 const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');
 
 const COMMANDS = {
