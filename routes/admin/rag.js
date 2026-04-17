@@ -80,34 +80,37 @@ module.exports = function(options) {
         if (!folder) return res.status(400).json({ error: 'Missing folder parameter' });
 
         const VCP_ROOT = process.env.VCP_ROOT || path.join(__dirname, '..', '..');
+        const knowledgeRoot = path.join(VCP_ROOT, 'knowledge');
         let dirPath;
         try {
             const { resolveNotebookPath } = require('../../modules/notebookResolver');
-            dirPath = resolveNotebookPath(folder, dailyNoteRootPath);
+            dirPath = resolveNotebookPath(folder, knowledgeRoot);
         } catch {
-            dirPath = path.join(dailyNoteRootPath || path.join(VCP_ROOT, 'knowledge'), folder);
+            dirPath = path.join(knowledgeRoot, folder);
         }
 
         try {
             const entries = await fs.readdir(dirPath);
             const tagCounts = new Map();
+            const fileTagMap = {};  // { "file.txt": ["tag1", "tag2"] }
 
             for (const file of entries) {
                 if (!file.endsWith('.txt') && !file.endsWith('.md')) continue;
                 try {
                     const content = await fs.readFile(path.join(dirPath, file), 'utf-8');
                     const lines = content.split('\n');
+                    const fileTags = [];
                     for (const line of lines) {
                         const m = line.match(/^Tags?:\s*(.+)/);
                         if (!m) continue;
-                        // 支持中英文逗号分隔
                         const tags = m[1].split(/[,，]/).map(t => t.trim()).filter(Boolean);
                         for (const tag of tags) {
-                            // 跳过示例占位符
                             if (/^标签\d+/.test(tag) || tag.includes('「末」')) continue;
                             tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+                            fileTags.push(tag);
                         }
                     }
+                    if (fileTags.length) fileTagMap[file] = [...new Set(fileTags)];
                 } catch { /* skip unreadable files */ }
             }
 
@@ -116,7 +119,7 @@ module.exports = function(options) {
                 .sort((a, b) => b[1] - a[1])
                 .map(([tag, count]) => ({ tag, count }));
 
-            res.json({ tags: sorted, folder });
+            res.json({ tags: sorted, folder, fileTagMap });
         } catch (err) {
             if (err.code === 'ENOENT') return res.json({ tags: [], folder, error: 'Folder not found' });
             res.status(500).json({ error: err.message });
