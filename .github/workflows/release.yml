@@ -378,13 +378,16 @@ jobs:
         id: owner
         run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image (amd64，宿主机原生 = 高性能)
+      - name: Set up QEMU (ARM cross-compile)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build and push Docker image (amd64 + arm64)
         uses: docker/build-push-action@v6
         with:
           context: main
           file: main/Dockerfile
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:${{ steps.version.outputs.VERSION }}
             ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:latest
