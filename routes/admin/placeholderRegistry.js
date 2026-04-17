@@ -31,7 +31,9 @@ let memCacheTime = 0;
 
 function fetchRemote() {
     return new Promise((resolve, reject) => {
-        const url = `https://raw.githubusercontent.com/${REPO}/main/placeholder-registry.json`;
+        const rawUrl = `https://raw.githubusercontent.com/${REPO}/main/placeholder-registry.json`;
+        const ghProxy = process.env.GH_PROXY || '';
+        const url = ghProxy ? `${ghProxy}/${rawUrl}` : rawUrl;
         const req = https.get(url, { headers: { 'User-Agent': 'VCPtoolbox-Junior-PlaceholderRegistry' } }, (res) => {
             if (res.statusCode === 301 || res.statusCode === 302) {
                 https.get(res.headers.location, (res2) => {

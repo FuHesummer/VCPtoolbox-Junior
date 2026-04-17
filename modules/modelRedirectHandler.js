@@ -17,7 +17,7 @@ class ModelRedirectHandler {
 
     // 检测并加载模型重定向配置
     async loadModelRedirectConfig(configPath = null) {
-        const redirectConfigPath = configPath || path.join(process.cwd(), 'ModelRedirect.json');
+        const redirectConfigPath = configPath || path.join(process.env.VCP_ROOT || process.cwd(), 'ModelRedirect.json');
         
         try {
             // 检查文件是否存在

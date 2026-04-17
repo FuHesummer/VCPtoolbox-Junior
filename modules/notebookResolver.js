@@ -115,7 +115,15 @@ function loadNotebookMap() {
  */
 function resolveNotebookPath(notebookName, fallbackRoot) {
     if (!notebookMap) loadNotebookMap();
+    // Exact match (e.g. "Nova/diary", "Nova/knowledge", "前思维簇")
     if (notebookMap[notebookName]) return notebookMap[notebookName];
+    // Agent short name → default to diary (e.g. "Nova" → "Nova/diary")
+    if (notebookMap[`${notebookName}/diary`]) return notebookMap[`${notebookName}/diary`];
+    // Agent short name + knowledge suffix (e.g. "Nova的知识" → try "Nova/knowledge")
+    const knowledgeMatch = notebookName.match(/^(.+?)(?:的知识|_knowledge|Knowledge)$/);
+    if (knowledgeMatch && notebookMap[`${knowledgeMatch[1]}/knowledge`]) {
+        return notebookMap[`${knowledgeMatch[1]}/knowledge`];
+    }
     return fallbackRoot ? path.join(fallbackRoot, notebookName) : path.join(VCP_ROOT, 'knowledge', notebookName);
 }
 

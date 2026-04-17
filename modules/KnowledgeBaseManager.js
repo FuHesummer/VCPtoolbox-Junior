@@ -46,6 +46,10 @@ class KnowledgeBaseManager {
             ignorePrefixes: (process.env.IGNORE_PREFIXES || process.env.IGNORE_PREFIX || '已整理').split(',').map(p => p.trim()).filter(Boolean),
             ignoreSuffixes: (process.env.IGNORE_SUFFIXES || process.env.IGNORE_SUFFIX || '夜伽').split(',').map(s => s.trim()).filter(Boolean),
 
+            // Additional notebook directories from notebookResolver (Agent/*/diary, Agent/*/knowledge, thinking/*)
+            // Each entry: { path: absPath, diaryName: displayName }
+            notebookDirs: config.notebookDirs || [],
+
             tagBlacklist: new Set((process.env.TAG_BLACKLIST || '').split(',').map(t => t.trim()).filter(Boolean)),
             tagBlacklistSuper: (process.env.TAG_BLACKLIST_SUPER || '').split(',').map(t => t.trim()).filter(Boolean),
             tagExpandMaxCount: parseInt(process.env.TAG_EXPAND_MAX_COUNT, 10) || 30,
@@ -249,11 +253,19 @@ class KnowledgeBaseManager {
 
     // 🏭 索引工厂
     async _getOrLoadDiaryIndex(diaryName) {
+        // Resolve short Agent name to canonical (e.g. "Nova" → "Nova/diary")
+        const canonical = this._resolveCanonicalDiaryName(diaryName);
+
         // 🌟 每次访问都刷新最后使用时间
-        this.diaryIndexLastUsed.set(diaryName, Date.now());
-        if (this.diaryIndices.has(diaryName)) {
+        this.diaryIndexLastUsed.set(canonical, Date.now());
+        if (this.diaryIndices.has(canonical)) {
+            return this.diaryIndices.get(canonical);
+        }
+        // Also check original name for backward compat
+        if (canonical !== diaryName && this.diaryIndices.has(diaryName)) {
             return this.diaryIndices.get(diaryName);
         }
+        diaryName = canonical; // use canonical from here on
 
         const shouldPersist = this.config.persistDefault || this.config.persistFolders.has(diaryName) || diaryName.endsWith('簇');
         console.log(`[KnowledgeBase] 📂 Loading index for diary: "${diaryName}" (Persist: ${shouldPersist})`);
@@ -664,29 +676,58 @@ class KnowledgeBaseManager {
     // =========================================================================
 
     // 🛠️ 修复 3: 同步回退 + 缓存预热
+    /**
+     * Try to resolve a short diary name (e.g. "Nova") to its canonical notebook name
+     * (e.g. "Nova/diary") using the notebookDirs mapping.
+     */
+    _resolveCanonicalDiaryName(shortName) {
+        for (const nb of this.config.notebookDirs) {
+            if (nb.diaryName === shortName) return shortName; // already canonical
+        }
+        // Try Agent short name → default diary
+        const diaryMatch = this.config.notebookDirs.find(nb => nb.diaryName === `${shortName}/diary`);
+        if (diaryMatch) return diaryMatch.diaryName;
+        // Try knowledge suffix
+        const knowledgeMatch = shortName.match(/^(.+?)(?:的知识|_knowledge|Knowledge)$/);
+        if (knowledgeMatch) {
+            const km = this.config.notebookDirs.find(nb => nb.diaryName === `${knowledgeMatch[1]}/knowledge`);
+            if (km) return km.diaryName;
+        }
+        return shortName; // no mapping found, use as-is
+    }
+
     async getDiaryNameVector(diaryName) {
         if (!diaryName) return null;
 
-        // 1. 查内存缓存
-        if (this.diaryNameVectorCache.has(diaryName)) {
+        // Resolve short names to canonical notebook names (e.g. "Nova" → "Nova/diary")
+        const canonical = this._resolveCanonicalDiaryName(diaryName);
+
+        // 1. 查内存缓存 (try both original and canonical)
+        if (this.diaryNameVectorCache.has(canonical)) {
+            return this.diaryNameVectorCache.get(canonical);
+        }
+        if (canonical !== diaryName && this.diaryNameVectorCache.has(diaryName)) {
             return this.diaryNameVectorCache.get(diaryName);
         }
 
-        // 2. 查数据库 (同步)
+        // 2. 查数据库 (同步) — try canonical first, then original
         try {
-            const row = this.db.prepare("SELECT vector FROM kv_store WHERE key = ?").get(`diary_name:${diaryName}`);
+            let row = this.db.prepare("SELECT vector FROM kv_store WHERE key = ?").get(`diary_name:${canonical}`);
+            if (!row && canonical !== diaryName) {
+                row = this.db.prepare("SELECT vector FROM kv_store WHERE key = ?").get(`diary_name:${diaryName}`);
+            }
             if (row && row.vector) {
                 const vec = Array.from(new Float32Array(row.vector.buffer, row.vector.byteOffset, this.config.dimension));
-                this.diaryNameVectorCache.set(diaryName, vec);
+                this.diaryNameVectorCache.set(canonical, vec);
                 return vec;
             }
         } catch (e) {
             console.warn(`[KnowledgeBase] DB lookup failed for diary name: ${diaryName}`);
         }
 
-        // 3. 缓存未命中，同步等待向量化
-        console.warn(`[KnowledgeBase] Cache MISS for diary name vector: "${diaryName}". Fetching now...`);
-        return await this._fetchAndCacheDiaryNameVector(diaryName);
+        // 3. 缓存未命中，同步等待向量化 (use canonical name)
+        console.warn(`[KnowledgeBase] Cache MISS for diary name vector: "${canonical}". Fetching now...`);
+        return await this._fetchAndCacheDiaryNameVector(canonical);
     }
 
     // 强制同步预热缓存
@@ -835,13 +876,29 @@ class KnowledgeBaseManager {
         }
     }
 
+    // Resolve diary name and relative path for a file.
+    // Checks notebookDirs mapping first, falls back to rootPath.
+    _resolveDiaryInfo(filePath) {
+        const norm = path.normalize(filePath);
+        // Check notebook directories (longest match first for specificity)
+        for (const nb of this.config.notebookDirs) {
+            const nbNorm = path.normalize(nb.path);
+            if (norm.startsWith(nbNorm + path.sep) || norm === nbNorm) {
+                const relPath = path.relative(nbNorm, norm);
+                return { diaryName: nb.diaryName, relPath: `${nb.diaryName}/${relPath}` };
+            }
+        }
+        // Fallback: relative to rootPath, first directory = diary name
+        const relPath = path.relative(this.config.rootPath, norm);
+        const parts = relPath.split(path.sep);
+        const diaryName = parts.length > 1 ? parts[0] : 'Root';
+        return { diaryName, relPath };
+    }
+
     _startWatcher() {
         if (!this.watcher) {
             const handleFile = (filePath) => {
-                const relPath = path.relative(this.config.rootPath, filePath);
-                // 提取第一级目录作为日记本名称
-                const parts = relPath.split(path.sep);
-                const diaryName = parts.length > 1 ? parts[0] : 'Root';
+                const { diaryName, relPath } = this._resolveDiaryInfo(filePath);
 
                 if (this.config.ignoreFolders.includes(diaryName)) return;
                 const fileName = path.basename(relPath);
@@ -892,7 +949,13 @@ class KnowledgeBaseManager {
                 });
             }
 
-            this.watcher = chokidar.watch(this.config.rootPath, {
+            // Watch rootPath (knowledge/) + all notebook directories (Agent/*/diary, Agent/*/knowledge, thinking/*)
+            const watchPaths = [this.config.rootPath];
+            for (const nb of this.config.notebookDirs) {
+                if (!watchPaths.includes(nb.path)) watchPaths.push(nb.path);
+            }
+
+            this.watcher = chokidar.watch(watchPaths, {
                 ignored: ignoredPatterns,
                 ignoreInitial: !this.config.fullScanOnStartup
             });
@@ -923,9 +986,7 @@ class KnowledgeBaseManager {
             await Promise.all(batchFiles.map(async (filePath) => {
                 try {
                     const stats = await fs.stat(filePath);
-                    const relPath = path.relative(this.config.rootPath, filePath);
-                    const parts = relPath.split(path.sep);
-                    const diaryName = parts.length > 1 ? parts[0] : 'Root';
+                    const { diaryName, relPath } = this._resolveDiaryInfo(filePath);
 
                     const row = checkFile.get(relPath);
                     if (row && row.mtime === stats.mtimeMs && row.size === stats.size) return;
@@ -1212,7 +1273,7 @@ class KnowledgeBaseManager {
     }
 
     async _handleDelete(filePath) {
-        const relPath = path.relative(this.config.rootPath, filePath);
+        const { relPath } = this._resolveDiaryInfo(filePath);
         try {
             const row = this.db.prepare('SELECT id, diary_name FROM files WHERE path = ?').get(relPath);
             if (!row) return;

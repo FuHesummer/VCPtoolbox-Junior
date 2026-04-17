@@ -5,7 +5,7 @@
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const dbPath = path.join(__dirname, 'VectorStore', 'knowledge_base.sqlite');
+const dbPath = path.join(__dirname, '..', 'VectorStore', 'knowledge_base.sqlite');
 
 if (!require('fs').existsSync(dbPath)) {
     console.error('❌ 数据库不存在:', dbPath);

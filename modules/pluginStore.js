@@ -168,7 +168,7 @@ function parseTarStream(stream, resolve, reject) {
 
 /**
  * Get remote plugin list from GitHub repo.
- * Uses Git Tree API to fetch all manifests in a single call (saves API quota).
+ * Priority: cache → placeholder-registry.json (1 call) → tarball+manifests (fallback)
  * @returns {Promise<Array>} List of available plugins with metadata
  */
 async function listRemote() {
@@ -176,18 +176,41 @@ async function listRemote() {
     const cached = await readCache();
     if (cached) return cached;
 
+    // Strategy 1: Fetch placeholder-registry.json — single HTTP call, zero API quota
     try {
-        // Single API call (cached 10min): get entire repo tree
-        const tree = await getRepoTree();
+        const raw = await fetchRaw('placeholder-registry.json');
+        const registry = JSON.parse(raw);
+        if (registry.plugins) {
+            const plugins = Object.entries(registry.plugins).map(([dirName, info]) => ({
+                name: dirName,
+                displayName: info.displayName || dirName,
+                version: info.version || '0.0.0',
+                description: info.description || '',
+                pluginType: info.pluginType || 'unknown',
+                category: info.category || undefined,
+                icon: info.icon || undefined,
+                disabledByDefault: info.disabledByDefault || false,
+                requires: Array.isArray(info.requires) ? info.requires : [],
+                dashboardCards: Array.isArray(info.dashboardCards) ? info.dashboardCards : undefined,
+                adminNav: (info.adminNav && typeof info.adminNav === 'object') ? info.adminNav : undefined,
+            }));
+            console.log(`[PluginStore] Loaded ${plugins.length} plugins from placeholder-registry.json`);
+            await writeCache(plugins);
+            return plugins;
+        }
+    } catch (regErr) {
+        console.warn(`[PluginStore] Registry fetch failed (${regErr.message}), falling back to tree+manifests`);
+    }
 
-        // Find all manifest files: <PluginName>/plugin-manifest.json(.block)
+    // Strategy 2: Tree API + individual manifest fetch (original logic)
+    try {
+        const tree = await getRepoTree();
         const manifestFiles = tree.tree.filter(f =>
             f.type === 'blob' &&
             /^[^/]+\/plugin-manifest\.json(\.block)?$/.test(f.path) &&
             !f.path.startsWith('.')
         );
 
-        // Deduplicate: prefer active manifest over .block
         const pluginManifests = new Map();
         for (const f of manifestFiles) {
             const pluginName = f.path.split('/')[0];
@@ -197,7 +220,6 @@ async function listRemote() {
             }
         }
 
-        // Fetch manifest contents via raw.githubusercontent.com (no API quota cost)
         const plugins = [];
         const entries = Array.from(pluginManifests.entries());
         const results = await Promise.allSettled(
@@ -210,9 +232,7 @@ async function listRemote() {
                     version: manifest.version || '0.0.0',
                     description: manifest.description || '',
                     pluginType: manifest.pluginType || 'unknown',
-                    // 插件间依赖声明（详见 docs/PLUGIN_PROTOCOL.md "插件间依赖"）
                     requires: Array.isArray(manifest.requires) ? manifest.requires : [],
-                    // UI 扩展协议（前端商店卡片据此显示小图标）
                     dashboardCards: Array.isArray(manifest.dashboardCards) ? manifest.dashboardCards : undefined,
                     adminNav: (manifest.adminNav && typeof manifest.adminNav === 'object') ? manifest.adminNav : undefined,
                     sha: file.sha
@@ -223,11 +243,9 @@ async function listRemote() {
             if (r.status === 'fulfilled') plugins.push(r.value);
         }
 
-        // Save cache
         await writeCache(plugins);
         return plugins;
     } catch (err) {
-        // On error (403 rate limit, network issue): try stale cache
         const stale = await readCache(true);
         if (stale) {
             console.warn(`[PluginStore] GitHub API failed (${err.message}), using stale cache`);
@@ -782,7 +800,9 @@ function collectBody(res) {
  */
 function fetchRaw(filePath) {
     return new Promise((resolve, reject) => {
-        const url = `https://raw.githubusercontent.com/${REPO}/main/${filePath}`;
+        const rawUrl = `https://raw.githubusercontent.com/${REPO}/main/${filePath}`;
+        const ghProxy = process.env.GH_PROXY || '';
+        const url = ghProxy ? `${ghProxy}/${rawUrl}` : rawUrl;
         https.get(url, { headers: { 'User-Agent': 'VCPtoolbox-Junior-PluginStore' } }, (res) => {
             if (res.statusCode === 301 || res.statusCode === 302) {
                 https.get(res.headers.location, (res2) => {
@@ -804,7 +824,9 @@ function fetchRaw(filePath) {
  */
 function fetchRawBuffer(filePath) {
     return new Promise((resolve, reject) => {
-        const url = `https://raw.githubusercontent.com/${REPO}/main/${filePath}`;
+        const rawUrl = `https://raw.githubusercontent.com/${REPO}/main/${filePath}`;
+        const ghProxy = process.env.GH_PROXY || '';
+        const url = ghProxy ? `${ghProxy}/${rawUrl}` : rawUrl;
         https.get(url, { headers: { 'User-Agent': 'VCPtoolbox-Junior-PluginStore' } }, (res) => {
             if (res.statusCode === 301 || res.statusCode === 302) {
                 https.get(res.headers.location, (res2) => {

@@ -1177,6 +1177,20 @@ app.post('/plugin-callback/:pluginName/:taskId', async (req, res) => {
 
 
 async function initialize() {
+    // Inject Agent notebook paths into KnowledgeBaseManager before initialization
+    try {
+        const { getNotebookEntries, ensureDirectories } = require('./modules/notebookResolver');
+        ensureDirectories();
+        const entries = getNotebookEntries();
+        const notebookDirs = entries.map(e => ({ path: e.path, diaryName: e.displayName }));
+        if (notebookDirs.length > 0) {
+            knowledgeBaseManager.config.notebookDirs = notebookDirs;
+            console.log(`[Server] Injected ${notebookDirs.length} Agent notebook paths into KnowledgeBaseManager`);
+        }
+    } catch (e) {
+        console.warn('[Server] Failed to inject notebook paths:', e.message);
+    }
+
     console.log('开始初始化向量数据库...');
     await knowledgeBaseManager.initialize(); // 在加载插件之前启动，确保服务就绪
     console.log('向量数据库初始化完成。');
