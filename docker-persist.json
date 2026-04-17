@@ -5,7 +5,7 @@
     { "path": "Plugin",                 "type": "dir",  "sync": "plugin" },
     { "path": "Agent",                  "type": "dir",  "sync": "merge" },
     { "path": "TVStxt",                 "type": "dir",  "sync": "merge" },
-    { "path": "knowledge",              "type": "dir" },
+    { "path": "knowledge",              "type": "dir",  "sync": "merge" },
     { "path": "thinking",               "type": "dir",  "sync": "merge" },
     { "path": "dailynote",              "type": "dir" },
     { "path": "image",                  "type": "dir" },

@@ -176,7 +176,13 @@ function initialize(httpServer, config) {
 
         ws.on('message', (message) => {
             const messageString = message.toString();
-            
+
+            // Handle plain-text ping from VChat clients
+            if (messageString.startsWith('ping')) {
+                ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+                return;
+            }
+
             try {
                 const parsedMessage = JSON.parse(message);
                 

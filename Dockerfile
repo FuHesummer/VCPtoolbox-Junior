@@ -97,6 +97,9 @@ COPY --from=build /usr/src/app/Agent ./Agent
 COPY --from=build /usr/src/app/Plugin ./Plugin
 COPY --from=build /usr/src/app/TVStxt ./TVStxt
 COPY --from=build /usr/src/app/thinking ./thinking
+COPY --from=build /usr/src/app/modules ./modules
+COPY --from=build /usr/src/app/routes ./routes
+COPY --from=build /usr/src/app/knowledge ./knowledge
 COPY --from=build /usr/src/app/scripts ./scripts
 COPY --from=build /usr/src/app/image ./image
 COPY --from=build /usr/src/app/docs ./docs
@@ -126,6 +129,7 @@ RUN mkdir -p /opt/defaults && \
     cp -r Agent    /opt/defaults/Agent    && \
     cp -r TVStxt   /opt/defaults/TVStxt   && \
     cp -r thinking /opt/defaults/thinking && \
+    cp -r knowledge /opt/defaults/knowledge && \
     cp agent_map.json /opt/defaults/agent_map.json 2>/dev/null || true
 
 # Create runtime directories (used when running without data/ volume)
