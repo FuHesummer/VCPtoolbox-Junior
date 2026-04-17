@@ -276,7 +276,7 @@ if (!tvsConfigPath || typeof tvsConfigPath !== 'string' || tvsConfigPath.trim() 
 
 const localAdminRouter = express.Router();
 
-// 本地可独立运行的模块列表
+// 本地可独立运行的模块列表（必须与 localAdminModules 的 key 完全一致）
 const localModules = [
     'system',          // PM2/系统资源/认证码/天气/热榜
     'logs',            // 服务器日志读取
@@ -288,6 +288,12 @@ const localModules = [
     'tvs',             // TVS 变量文件管理
     'schedules',       // 日程管理
     'dailyNotes',      // 日记知识库文件管理
+    'dashboardLayout', // 仪表盘布局
+    'panelRegistry',   // 面板注册表
+    'sarPrompts',      // 模型专属指令
+    'migration',       // 迁移向导
+    'placeholderRegistry', // 占位符注册表
+    'maintenance',     // 运维中心（spawn 维护脚本）
 ];
 
 // 日志路径获取函数（本地计算，不依赖主进程 logger 实例）
@@ -350,6 +356,7 @@ const localAdminModules = {
     sarPrompts:        require('./routes/admin/sarPrompts'),
     migration:         require('./routes/admin/migration'),
     placeholderRegistry: require('./routes/admin/placeholderRegistry'),
+    maintenance:       require('./routes/admin/maintenance'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {
