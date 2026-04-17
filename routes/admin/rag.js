@@ -74,6 +74,55 @@ module.exports = function(options) {
         } catch (error) { res.status(500).json({ error: 'Failed' }); }
     });
 
+    // 从文件夹的知识文件中自动提取 Tag: 行
+    router.get('/extract-file-tags', async (req, res) => {
+        const folder = req.query.folder;
+        if (!folder) return res.status(400).json({ error: 'Missing folder parameter' });
+
+        const VCP_ROOT = process.env.VCP_ROOT || path.join(__dirname, '..', '..');
+        let dirPath;
+        try {
+            const { resolveNotebookPath } = require('../../modules/notebookResolver');
+            dirPath = resolveNotebookPath(folder, dailyNoteRootPath);
+        } catch {
+            dirPath = path.join(dailyNoteRootPath || path.join(VCP_ROOT, 'knowledge'), folder);
+        }
+
+        try {
+            const entries = await fs.readdir(dirPath);
+            const tagCounts = new Map();
+
+            for (const file of entries) {
+                if (!file.endsWith('.txt') && !file.endsWith('.md')) continue;
+                try {
+                    const content = await fs.readFile(path.join(dirPath, file), 'utf-8');
+                    const lines = content.split('\n');
+                    for (const line of lines) {
+                        const m = line.match(/^Tags?:\s*(.+)/);
+                        if (!m) continue;
+                        // 支持中英文逗号分隔
+                        const tags = m[1].split(/[,，]/).map(t => t.trim()).filter(Boolean);
+                        for (const tag of tags) {
+                            // 跳过示例占位符
+                            if (/^标签\d+/.test(tag) || tag.includes('「末」')) continue;
+                            tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+                        }
+                    }
+                } catch { /* skip unreadable files */ }
+            }
+
+            // 按出现频率降序排列
+            const sorted = [...tagCounts.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([tag, count]) => ({ tag, count }));
+
+            res.json({ tags: sorted, folder });
+        } catch (err) {
+            if (err.code === 'ENOENT') return res.json({ tags: [], folder, error: 'Folder not found' });
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     // 扫描思维簇目录（以"簇"结尾的子目录）
     // Junior: 思维簇统一放在 thinking/ 目录；同时兼容 dailyNoteRootPath (= knowledge/) 以防用户放在老位置
     router.get('/available-clusters', async (req, res) => {

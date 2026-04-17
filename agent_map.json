@@ -4,5 +4,14 @@
   "Hornet": "Hornet/Hornet.txt",
   "Aemeath": "Aemeath/Aemeath.txt",
   "DreamNova": "DreamNova/DreamNova.txt",
-  "Metis": "Metis/Metis.txt"
+  "Metis": {
+    "prompt": "Metis/Metis.txt",
+    "notebooks": {
+      "前思维簇": "thinking/前思维簇",
+      "逻辑推理簇": "thinking/逻辑推理簇",
+      "反思簇": "thinking/反思簇",
+      "结果辩证簇": "thinking/结果辩证簇",
+      "陈词总结梳理簇": "thinking/陈词总结梳理簇"
+    }
+  }
 }
