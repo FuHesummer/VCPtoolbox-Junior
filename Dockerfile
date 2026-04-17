@@ -121,9 +121,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 #   plugin  → version-based smart upgrade, preserve user state
 #   merge   → add new files, never overwrite existing
 RUN mkdir -p /opt/defaults && \
-    cp -r Plugin  /opt/defaults/Plugin  && \
-    cp -r Agent   /opt/defaults/Agent   && \
-    cp -r TVStxt  /opt/defaults/TVStxt  && \
+    cp -r Plugin   /opt/defaults/Plugin   && \
+    cp -r Agent    /opt/defaults/Agent    && \
+    cp -r TVStxt   /opt/defaults/TVStxt   && \
+    cp -r thinking /opt/defaults/thinking && \
     cp agent_map.json /opt/defaults/agent_map.json 2>/dev/null || true
 
 # Create runtime directories (used when running without data/ volume)

@@ -6,7 +6,7 @@
     { "path": "Agent",                  "type": "dir",  "sync": "merge" },
     { "path": "TVStxt",                 "type": "dir",  "sync": "merge" },
     { "path": "knowledge",              "type": "dir" },
-    { "path": "thinking",               "type": "dir" },
+    { "path": "thinking",               "type": "dir",  "sync": "merge" },
     { "path": "dailynote",              "type": "dir" },
     { "path": "image",                  "type": "dir" },
     { "path": "VectorStore",            "type": "dir" },
