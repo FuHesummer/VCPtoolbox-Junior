@@ -150,5 +150,54 @@ module.exports = function () {
         }
     });
 
+    // Execute backend update: download latest release + restart
+    router.post('/execute-update', async (req, res) => {
+        const { spawn } = require('child_process');
+        const scriptPath = path.join(VCP_ROOT, 'scripts', 'install.sh');
+        const hasScript = fs.existsSync(scriptPath);
+
+        // SSE stream for progress
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+        try {
+            // Strategy 1: install.sh exists (Linux deploy) → run update mode
+            if (hasScript) {
+                send({ step: 'start', message: 'Running install.sh update...' });
+                const proc = spawn('bash', [scriptPath, '--update'], {
+                    cwd: VCP_ROOT,
+                    env: { ...process.env, NONINTERACTIVE: '1' }
+                });
+                proc.stdout.on('data', d => send({ step: 'progress', message: d.toString().trim() }));
+                proc.stderr.on('data', d => send({ step: 'progress', message: d.toString().trim() }));
+                proc.on('close', code => {
+                    send({ step: code === 0 ? 'done' : 'error', message: code === 0 ? 'Update complete. Restart required.' : `Exit code ${code}` });
+                    res.end();
+                });
+                return;
+            }
+
+            // Strategy 2: No install.sh → download latest release asset via GitHub API
+            send({ step: 'start', message: 'Downloading latest release...' });
+            const releaseInfo = await fetchLatestRelease(BACKEND_REPO);
+            if (!releaseInfo) {
+                send({ step: 'error', message: 'Failed to fetch release info' });
+                res.end();
+                return;
+            }
+
+            send({ step: 'progress', message: `Latest: ${releaseInfo.tag} — ${releaseInfo.name || ''}` });
+            send({ step: 'done', message: `Found ${releaseInfo.tag}. Use install.sh or Docker to update. Release: ${releaseInfo.url}` });
+            res.end();
+        } catch (err) {
+            send({ step: 'error', message: err.message });
+            res.end();
+        }
+    });
+
     return router;
 };
