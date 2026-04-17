@@ -7,39 +7,39 @@ module.exports = function(options) {
     const { pluginManager } = options;
 
     // POST to restart the server
+    // 支持两种模式：
+    //   pm2 模式：process.exit(1) → pm2 检测 exit code 自动拉起
+    //   裸跑模式：spawn 自己 → 新进程接管 → 旧进程退出
     router.post('/server/restart', async (req, res) => {
-        const { triggerRestart } = options;
-        res.json({ message: '服务器重启命令已接纳。正在执行优雅关闭并请求进程管理器重启...' });
+        const isInPM2 = ('PM2_HOME' in process.env) || ('pm_id' in process.env);
+        res.json({ message: isInPM2
+            ? '重启命令已接纳，pm2 将自动重启服务。'
+            : '重启命令已接纳，正在启动新进程...'
+        });
 
-        setTimeout(async () => {
-            console.log('[AdminPanelRoutes] Received restart command. Initiating shutdown...');
+        setTimeout(() => {
+            console.log(`[Restart] 模式: ${isInPM2 ? 'pm2' : '裸跑 spawn'}，500ms 后执行`);
 
-            // 强制清除Node.js模块缓存（尽力而为）
-            const moduleKeys = Object.keys(require.cache);
-            moduleKeys.forEach(key => {
-                if (key.includes('TextChunker.js') || key.includes('VectorDBManager.js')) {
-                    delete require.cache[key];
-                }
-            });
-
-            if (typeof triggerRestart === 'function') {
+            if (!isInPM2) {
+                // 裸跑模式：spawn 新进程替代自己（SEA exe 或 node server.js）
                 try {
-                    await triggerRestart(1); // 传 1 以确保 PM2 检测到状态变化并自动拉起
-                } catch (error) {
-                    console.error('[AdminPanelRoutes] Graceful shutdown failed, falling back to process.exit(1):', error);
-                    process.exit(1);
+                    const { spawn } = require('child_process');
+                    const child = spawn(process.execPath, process.argv.slice(1), {
+                        cwd: process.cwd(),
+                        stdio: 'inherit',
+                        detached: true,
+                        env: process.env
+                    });
+                    child.unref();
+                    console.log(`[Restart] 新进程已 spawn (PID ${child.pid})，旧进程退出`);
+                } catch (e) {
+                    console.error('[Restart] spawn 失败:', e.message);
                 }
-            } else {
-                console.warn('[AdminPanelRoutes] No triggerRestart callback found. Falling back to process.exit(1).');
-                process.exit(1);
             }
-            
-            // 最后的防御：如果 15 秒后还没退出，强行硬退出
-            setTimeout(() => {
-                console.error('[AdminPanelRoutes] Shutdown timed out. Force exiting...');
-                process.exit(1);
-            }, 15000).unref();
-        }, 1000);
+
+            // 无论哪种模式，都 exit（pm2 会拉起；裸跑新进程已接管）
+            setTimeout(() => process.exit(1), 1000).unref();
+        }, 500);
     });
 
     // 验证登录端点
