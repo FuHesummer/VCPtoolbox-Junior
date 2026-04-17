@@ -47,47 +47,101 @@ VCPtoolbox-Junior 是 VCPToolBox 的解耦分支，保留了 VCP 的全部核心
 
 ## 快速开始
 
-### 方式一：下载预构建包（推荐）
+### 方式一：Linux 一键脚本（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FuHesummer/VCPtoolbox-Junior/main/scripts/install.sh -o install.sh
+chmod +x install.sh
+./install.sh
+```
+
+脚本提供交互式菜单，支持：
+
+| 功能 | 说明 |
+|------|------|
+| 全自动安装 | 自动安装 Node.js 22 + pm2，下载最新 Release，配置开机自启 |
+| 一键更新 | 白名单策略替换代码模块，保留用户数据不动 |
+| 服务管理 | 启动 / 停止 / 重启 / 查看状态 / 查看日志 |
+| 配置编辑 | 直接编辑 config.env |
+| 镜像代理 | 国内服务器可配置 GitHub 加速镜像（ghproxy.net 等） |
+| 开机自启 | 配置 / 取消 pm2 开机自启 |
+| 脚本自更新 | 从 GitHub 拉取最新版脚本 |
+
+> 国内服务器首次运行建议先选菜单 12 配置镜像代理，再执行安装。
+
+### 方式二：Docker（支持 amd64 / arm64）
+
+```bash
+# 创建工作目录
+mkdir vcp && cd vcp
+
+# 创建 docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+services:
+  app:
+    image: ghcr.io/fuhesummer/vcptoolbox-junior:latest
+    container_name: vcptoolbox
+    ports:
+      - "6005:6005"
+      - "6006:6006"
+    environment:
+      TZ: ${DEFAULT_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - ./data:/usr/src/app/data
+    restart: unless-stopped
+EOF
+
+# 启动
+docker compose up -d
+```
+
+或直接 `docker run`：
+
+```bash
+docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
+mkdir -p data
+docker run -d --name vcptoolbox \
+  -p 6005:6005 -p 6006:6006 \
+  -v ./data:/usr/src/app/data \
+  ghcr.io/fuhesummer/vcptoolbox-junior:latest
+```
+
+**持久化**：只需挂载一个 `data/` 目录，所有用户数据自动持久化：
+
+| 数据 | 路径 | 更新策略 |
+|------|------|----------|
+| 配置文件 | `data/config.env` | 首次从 example 初始化，不覆盖 |
+| 插件 | `data/Plugin/` | 版本感知智能升级，保留用户状态 |
+| Agent | `data/Agent/` | 增量合并，不覆盖现有 |
+| 知识库 | `data/knowledge/` | 用户数据，不覆盖 |
+| 思维簇 | `data/thinking/` | 增量合并预设，不覆盖用户产物 |
+| 日记 | `data/dailynote/` | 用户数据，不覆盖 |
+| 向量索引 | `data/VectorStore/` | 用户数据，不覆盖 |
+
+> 更新镜像后 `docker compose pull && docker compose up -d` 即可，用户数据不丢失。
+> 持久化策略定义在 `docker-persist.json`。
+
+### 方式三：下载预构建包
 
 前往 [Releases](https://github.com/FuHesummer/VCPtoolbox-Junior/releases) 下载对应平台的包：
 
 | 平台 | 文件 |
 |------|------|
-| Windows x64 | `vcp-junior-win32-x64.zip` |
 | Linux x64 | `vcp-junior-linux-x64.tar.gz` |
+| Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` |
 | macOS ARM64 (M系列) | `vcp-junior-darwin-arm64.tar.gz` |
+| Windows x64 | `vcp-junior-win32-x64.zip` |
 
 ```bash
 # 解压后
-# Windows: 直接运行 VCPtoolbox.exe
-# Linux/macOS:
 chmod +x VCPtoolbox
 ./VCPtoolbox
+# Windows: 直接运行 VCPtoolbox.exe
 ```
 
-首次运行会自动创建 `config.env`（从 example 复制）。编辑 `config.env` 填入你的 API 密钥即可。
+首次运行自动创建 `config.env`，编辑填入 API 密钥即可。
 
-主服务 (端口 6005) + 管理面板 (端口 6006) 同时启动，打开 `http://localhost:6006/AdminPanel/` 进入管理面板。
-
-### 方式二：Docker
-
-```bash
-# 使用 docker-compose（推荐）
-docker-compose up --build -d
-
-# 或直接拉取镜像
-docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
-mkdir -p data
-docker run -d -p 6005:6005 -p 6006:6006 \
-  -v ./data:/usr/src/app/data \
-  ghcr.io/fuhesummer/vcptoolbox-junior:latest
-```
-
-> 只需挂载一个 `data/` 目录，所有用户数据（配置、插件、知识库、日记、向量索引等）自动持久化。
-> 首次启动从镜像同步默认配置；更新镜像时智能合并新插件，保留用户设置和启用状态。
-> 持久化路径定义在 `docker-persist.json`，详见文件内注释。
-
-### 方式三：从源码运行
+### 方式四：从源码运行
 
 **环境要求**：Node.js 22+、Rust toolchain (stable)
 
