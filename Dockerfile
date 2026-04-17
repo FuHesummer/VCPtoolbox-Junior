@@ -96,6 +96,7 @@ COPY --from=build /usr/src/app/AdminPanel ./AdminPanel
 COPY --from=build /usr/src/app/Agent ./Agent
 COPY --from=build /usr/src/app/Plugin ./Plugin
 COPY --from=build /usr/src/app/TVStxt ./TVStxt
+COPY --from=build /usr/src/app/thinking ./thinking
 COPY --from=build /usr/src/app/scripts ./scripts
 COPY --from=build /usr/src/app/image ./image
 COPY --from=build /usr/src/app/docs ./docs
