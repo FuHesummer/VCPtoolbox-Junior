@@ -79,6 +79,10 @@ async function build() {
     fs.writeFileSync(entryFile, [
         '// VCPtoolbox-Junior — combined entry (server + admin, single process)',
         '',
+        '// 🔑 SEA 兼容：__dirname 在 SEA 里是虚拟路径，必须用 cwd 作为项目根',
+        '// pm2 的 exec_cwd 和用户 cd 到安装目录后的 cwd 都是正确的项目根',
+        "process.env.VCP_ROOT = process.env.VCP_ROOT || process.cwd();",
+        '',
         '// 🔑 CRITICAL: dotenv 必须最先加载',
         '// esbuild bundle 把所有模块合并，模块级代码按依赖顺序执行；',
         '// panelUpdater.js 有模块级 const PANEL_DISABLED = process.env.PANEL_RELEASE_URL===disabled，',

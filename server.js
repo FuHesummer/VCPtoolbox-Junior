@@ -1,7 +1,9 @@
 // server.js
-// Set project root early — __dirname is reliable in both source and bundle mode.
-// Modules in subdirectories should use VCP_ROOT instead of path.dirname(__dirname).
-process.env.VCP_ROOT = __dirname;
+// Set project root early.
+// SEA bundle 里 __dirname 是虚拟路径（/），不可靠；用 process.cwd() 作为 fallback。
+// pm2 的 exec_cwd 和用户 cd 到安装目录后的 cwd 都是正确的项目根。
+// 如果用户/脚本显式设了 VCP_ROOT 环境变量，优先保留。
+process.env.VCP_ROOT = process.env.VCP_ROOT || process.cwd();
 
 const express = require('express');
 const dotenv = require('dotenv');

@@ -5,7 +5,8 @@ const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
 
-const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.env');
+// SEA bundle 里 __dirname 是虚拟路径，用 VCP_ROOT（server.js 早期设置）
+const CONFIG_PATH = path.join(process.env.VCP_ROOT || process.cwd(), 'config.env');
 
 // ============================================================
 // 解析：从 config.env 文本抽取 SarModelN / SarPromptN 对
