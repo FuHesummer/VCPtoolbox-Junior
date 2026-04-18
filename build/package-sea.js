@@ -478,9 +478,15 @@ async function prepareAdminPanel(outputDir) {
 
     const dest = path.join(outputDir, 'AdminPanel');
     await copyRecursive(picked.path, dest, []);
-    // Write .panel-version so panelUpdater knows the bundled version and doesn't re-download
-    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-    const panelTag = `v${pkg.version}`;
+    // Write .panel-version from Panel's own package.json (not main repo's)
+    let panelTag = 'bundled';
+    try {
+        const panelPkgPath = path.join(picked.path, '..', 'package.json');
+        if (fs.existsSync(panelPkgPath)) {
+            const panelPkg = JSON.parse(fs.readFileSync(panelPkgPath, 'utf8'));
+            panelTag = `v${panelPkg.version}`;
+        }
+    } catch {}
     fs.writeFileSync(path.join(dest, '.panel-version'), panelTag, 'utf8');
     console.log(`   ✅ AdminPanel 已注入（来自 ${picked.source}, version: ${panelTag}）\n`);
 }
