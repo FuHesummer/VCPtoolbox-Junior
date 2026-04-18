@@ -131,7 +131,7 @@ async function downloadRelease(release, silent = false) {
     try {
         const { execSync } = require('child_process');
         if (process.platform === 'win32') {
-            execSync(`powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${PANEL_DIR}' -Force"`, { stdio: 'pipe' });
+            execSync(`powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${PANEL_DIR}' -Force"`, { stdio: 'pipe', windowsHide: true });
         } else {
             try {
                 execSync(`unzip -o "${tempZipPath}" -d "${PANEL_DIR}"`, { stdio: 'pipe' });

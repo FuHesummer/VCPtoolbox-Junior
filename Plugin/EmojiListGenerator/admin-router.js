@@ -159,6 +159,7 @@ function regenerateLists() {
         const child = spawn(process.execPath, [scriptPath], {
             env: { ...process.env, PROJECT_BASE_PATH: VCP_ROOT },
             stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
         });
         let stdout = '', stderr = '';
         child.stdout.on('data', c => { stdout += c.toString(); });

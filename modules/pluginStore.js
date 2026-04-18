@@ -437,6 +437,7 @@ async function install(pluginName, options = {}) {
                 cwd: targetDir,
                 stdio: 'pipe',
                 timeout: 120000,
+                windowsHide: true,
             });
             console.log(`[PluginStore] Dependencies installed for "${pluginName}".`);
         } catch (e) {

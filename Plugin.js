@@ -24,6 +24,27 @@ function safeClearRequireCache(modulePath) {
     }
     return false;
 }
+
+/**
+ * 跨平台 shell 命令执行器（替代 spawn(cmd, { shell: true, windowsHide: true })）
+ * 背景：Node 在 Windows + SEA 打包 + shell:true 下 windowsHide 偶尔失效，
+ *       导致静态插件周期性刷新 / 同步插件调用时闪出空白 cmd 终端。
+ * 策略：
+ *   - Windows：显式 spawn('cmd.exe', ['/d','/s','/c', command]) + windowsVerbatimArguments
+ *     · /d 禁用 AutoRun / /s 修正引号处理 / /c 执行完退出
+ *     · windowsVerbatimArguments 让 Node 不再二次转义参数
+ *   - 非 Windows：保持 spawn(command, { shell: true })
+ */
+function spawnShellCommand(command, opts = {}) {
+    if (process.platform === 'win32') {
+        return spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], {
+            ...opts,
+            windowsHide: true,
+            windowsVerbatimArguments: true,
+        });
+    }
+    return spawn(command, { ...opts, shell: true, windowsHide: true });
+}
 const chokidar = require('chokidar');
 const { getAuthCode } = require('./modules/captchaDecoder'); // 导入统一的解码函数
 const ToolApprovalManager = require('./modules/toolApprovalManager');
@@ -101,7 +122,7 @@ class PluginManager extends EventEmitter {
             try {
                 if (isWin) {
                     // /F 强杀 + /T 进程树（连带孙进程）
-                    execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 3000 });
+                    execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true });
                 } else {
                     // Unix: 先 SIGTERM 给机会，再 SIGKILL
                     try { process.kill(-pid, 'SIGKILL'); } catch { /* 非进程组成员 */ }
@@ -241,9 +262,10 @@ class PluginManager extends EventEmitter {
             }
 
 
-            // shell:true 模式直接传完整命令字符串，避免 DEP0190（args 数组 + shell 会拼接不转义）
+            // 跨平台 shell 命令执行：Windows 显式 cmd.exe + windowsVerbatimArguments
+            // 避免 SEA 打包下 shell:true + windowsHide 失效导致周期性闪出空白终端
             // entryPoint.command 是 manifest 静态配置，不含用户输入
-            const pluginProcess = spawn(plugin.entryPoint.command, { cwd: plugin.basePath, shell: true, env: envForProcess, windowsHide: true });
+            const pluginProcess = spawnShellCommand(plugin.entryPoint.command, { cwd: plugin.basePath, env: envForProcess });
             this._trackChildProcess(pluginProcess);
             let output = '';
             let errorOutput = '';
@@ -576,6 +598,7 @@ class PluginManager extends EventEmitter {
                 cwd: pluginPath,
                 stdio: 'pipe',
                 timeout: 60000,
+                windowsHide: true,
             });
             console.log(`[PluginManager] Dependencies installed for "${pluginName}".`);
         } catch (e) {
@@ -1852,9 +1875,9 @@ class PluginManager extends EventEmitter {
             if (this.debugMode) console.log(`[PluginManager executePlugin Internal] For plugin "${pluginName}", manifest entryPoint command is: "${plugin.entryPoint.command}"`);
             if (this.debugMode) console.log(`[PluginManager executePlugin Internal] Attempting to spawn: "${plugin.entryPoint.command}" in cwd: ${plugin.basePath}`);
 
-            // shell:true 模式直接传完整命令字符串，避免 DEP0190
+            // 跨平台 shell 命令执行（Windows 显式 cmd.exe + windowsVerbatimArguments）
             if (this.debugMode) console.log(`[PluginManager executePlugin Internal] Attempting to spawn command: "${plugin.entryPoint.command}" in cwd: ${plugin.basePath}`);
-            const pluginProcess = spawn(plugin.entryPoint.command, { cwd: plugin.basePath, shell: true, env: finalEnv, windowsHide: true });
+            const pluginProcess = spawnShellCommand(plugin.entryPoint.command, { cwd: plugin.basePath, env: finalEnv });
             this._trackChildProcess(pluginProcess);
 
 
