@@ -35,4 +35,7 @@
 | 2026-04-16 | 019d967d | 85828ad | 🐛 fix(lifecycle+arch): 孤儿进程清理 + 打包守 16 核心边界 | 3 | 2 | high |
 | 2026-04-16 | 019d96a5 | e0f13a7 | 👷 ci: v2-beta.1 打包迭代修复（matrix/Docker/shell/adminServer 根因/Release latest）— 聚合 7 commit | 5 | 3 | high |
 | 2026-04-16 | 019d96ba | PENDING | fix(adminServer): Express 5 path-to-regexp + 挂载顺序 + CI 放开下载 | 3 | 1 | high |
-| 2026-04-18 | 019da151 | PENDING | 🔧 chore(admin): adminServer localModules 数组补齐 3 个名字 | 1 | 0 | low |
+| 2026-04-18 | 019da151 | c9f84d8 | 🔧 chore(admin): adminServer localModules 数组补齐 3 个名字 | 1 | 0 | low |
+| 2026-04-19 | 019da197 | 4a0df9c | ✨ feat(migration): VCPBackUp 一键备份/迁移全链路 + 坚果云 WebDAV + 定期调度 | 4 | 1 | high |
+| 2026-04-19 | 019da197 | 27d67d4 | ⚡ perf(folding): 摘要队列节流减缓 429（同步上游 4952cc7） | 3 | 0 | med |
+| 2026-04-19 | 019da197 | 0f66ddb | 🐛 fix(core): Plugin.js spawn 修 DEP0190（shell:true + args 拆分） | 1 | 1 | low |
