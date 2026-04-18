@@ -8,8 +8,9 @@ const lock = require('./lock');
 const { PROJECT_ROOT } = require('./utils');
 const { scanUpstream } = require('./scan');
 const { backupCurrent, listBackups } = require('./backup');
-const { migrateAgents } = require('./agents');
-const { migrateDailynote } = require('./dailynote');
+const { migrateAgents, triggerAgentManagerReload } = require('./agents');
+const { migrateDailynote, autoPlan: dailynoteAutoPlan } = require('./dailynote');
+const { migrateKnowledge, autoPlan: knowledgeAutoPlan } = require('./knowledge');
 const { migrateTvs, migrateImages } = require('./assets');
 const { migrateVectors } = require('./vectors');
 const { diffConfigEnv, applyMerge } = require('./config');
@@ -90,6 +91,14 @@ function executeMigration(plan) {
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
+            // 3.5 Knowledge (上游 knowledge/<Name>/ 分流)
+            if (plan.knowledge && plan.knowledge.length > 0) {
+                emit(emitter, 'info', 'knowledge', `📚 迁移知识库（${plan.knowledge.length}类）...`);
+                summary.stages.knowledge = await migrateKnowledge(
+                    sourceRoot, plan.knowledge, emitter);
+            }
+            if (cancelled(job)) return aborted(emitter, summary);
+
             // 4. TVS
             if (plan.tvs && plan.tvs.length > 0) {
                 emit(emitter, 'info', 'tvs', `🎨 迁移 TVS 变量（${plan.tvs.length}个）...`);
@@ -127,6 +136,10 @@ function executeMigration(plan) {
                 summary.stages.config = await applyMerge(
                     sourceRoot, plan.configMerge, emitter);
             }
+
+            // 9. 收尾：触发 AgentManager 重扫磁盘 + 回写 agent_map.json
+            emit(emitter, 'info', 'finalize', `🔄 触发 AgentManager 自动发现...`);
+            await triggerAgentManagerReload(emitter);
 
             summary.finishedAt = new Date().toISOString();
             summary.status = 'success';
@@ -205,6 +218,63 @@ function emit(emitter, level, stage, message) {
     emitter.emit('log', { level, stage, message, ts: new Date().toISOString() });
 }
 
+/**
+ * 🪄 智能推荐：基于 scanResult + matchPlugins 生成一键默认 plan
+ *   - agents: 全选
+ *   - dailynotes: 自动按 Agent 同名 → personal，其余 → public（公共前缀）
+ *   - knowledge: 同上（Agent 同名 → personal，其余 → public）
+ *   - tvs/images: 全选
+ *   - plugins: installable 全选（本地+远程，source 字段保留），notAvailable 跳过
+ *   - configMerge: 全部 add=true，conflicts 保守 keep junior
+ *   - copyVectors: false（默认不搬全局向量，用户要再手动勾）
+ *
+ * @param {string} sourcePath 源路径（dir 或 zip）
+ * @returns {Promise<{ plan, scan, match, summary }>}
+ */
+async function generateAutoPlan(sourcePath, opts = {}) {
+    const scan = await scanUpstream(sourcePath);
+    if (!scan.valid) {
+        throw new Error(`源无效：${scan.reason}`);
+    }
+    const match = await matchPlugins(scan.plugins || []);
+
+    const agentNames = (scan.agents || []).map(a => a.name);
+    const plan = {
+        sourcePath,
+        doBackup: true,
+        agents: agentNames,
+        dailynotes: dailynoteAutoPlan(scan.dailynotes || [], agentNames),
+        knowledge: knowledgeAutoPlan(scan.knowledge || [], agentNames),
+        tvs: (scan.tvs || []).map(t => t.name),
+        images: (scan.images || []).map(i => i.name),
+        plugins: (match.installable || []).map(p => ({
+            name: p.name,
+            source: p.source,
+            mergeConfig: true,
+            copyVectorStore: false,
+            enable: p.upstreamEnabled !== false,
+        })),
+        configMerge: null, // 前端如果要 diff 再另外调 /migration/config-diff
+        copyVectors: false,
+    };
+
+    return {
+        plan,
+        scan,
+        match,
+        summary: {
+            agents: plan.agents.length,
+            dailynotes: plan.dailynotes.length,
+            knowledge: plan.knowledge.length,
+            tvs: plan.tvs.length,
+            images: plan.images.length,
+            pluginsInstallable: plan.plugins.length,
+            pluginsBuiltin: (match.builtin || []).length,
+            pluginsSkipped: (match.notAvailable || []).length,
+        },
+    };
+}
+
 module.exports = {
     scanUpstream,
     diffConfigEnv,
@@ -212,6 +282,7 @@ module.exports = {
     backupCurrent,
     listBackups,
     executeMigration,
+    generateAutoPlan,
     readHistory,
     lock,
     // 新增（VCPBackUp 适配 + WebDAV + 定期备份）

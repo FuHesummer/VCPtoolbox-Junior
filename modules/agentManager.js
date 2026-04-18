@@ -31,43 +31,134 @@ class AgentManager {
     }
 
     /**
-     * Loads or reloads the agent alias-to-filename mapping from agent_map.json.
+     * Loads or reloads the agent alias-to-filename mapping.
+     * 策略（核心需求）：
+     *   1. 读 agent_map.json 作为用户显式配置
+     *   2. 扫描 Agent/<Name>/ 目录自动发现（优先 <Name>.txt，兜底任意 .txt；自动挂 diary + knowledge/*）
+     *   3. 合并：文件里已有条目原样保留，磁盘新发现的以新格式 {prompt, notebooks} 追加
+     *   4. 有新增时回写 agent_map.json（原子写 + 只追加，不破坏已有条目）
+     * 效果：用户把 Agent/ 子目录一丢（或迁移过来），启动即识别，不必手动编辑 map。
      */
     async loadMap() {
+        let mapJson = {};
         try {
             const mapContent = await fs.readFile(MAP_FILE, 'utf8');
-            const mapJson = JSON.parse(mapContent);
-
-            this.agentMap.clear();
-            for (const alias in mapJson) {
-                const value = mapJson[alias];
-                // Support both old format ("path.txt") and new format ({ prompt, notebooks })
-                if (typeof value === 'string') {
-                    this.agentMap.set(alias, value);
-                } else if (typeof value === 'object' && value.prompt) {
-                    this.agentMap.set(alias, value.prompt);
-                }
-            }
-
-            if (this.debugMode) {
-                console.log(`[AgentManager] Loaded ${this.agentMap.size} agent mappings from agent_map.json.`);
-            }
-            // When the map changes, the entire prompt cache becomes potentially invalid.
-            this.promptCache.clear();
-            // Also reload notebook resolver cache
-            try { require('./notebookResolver').reload(); } catch {}
-            console.log('[AgentManager] Agent map reloaded and prompt cache cleared.');
-
+            mapJson = JSON.parse(mapContent);
         } catch (error) {
-            if (error.code === 'ENOENT') {
-                console.warn(`[AgentManager] agent_map.json not found. No agents will be loaded.`);
-            } else {
+            if (error.code !== 'ENOENT') {
                 console.error('[AgentManager] Error loading or parsing agent_map.json:', error);
             }
-            // Clear map and cache on error to prevent using stale data.
-            this.agentMap.clear();
-            this.promptCache.clear();
+            // 文件不存在 = 全靠自动发现，继续流程
         }
+
+        // 自动扫目录补齐
+        let backfilled = 0;
+        try {
+            const discovered = await this._autoDiscoverAgents();
+            for (const [name, entry] of Object.entries(discovered)) {
+                if (!(name in mapJson)) {
+                    mapJson[name] = entry;
+                    backfilled++;
+                    const nbCount = Object.keys(entry.notebooks || {}).length;
+                    console.log(`[AgentManager] Auto-discovered: ${name} (prompt=${entry.prompt}${nbCount ? ', notebooks=' + nbCount : ''})`);
+                }
+            }
+        } catch (e) {
+            console.warn('[AgentManager] Auto-discover failed:', e.message);
+        }
+
+        // 仅新增才回写（atomic：写临时再 rename）
+        if (backfilled > 0) {
+            try {
+                const outText = JSON.stringify(mapJson, null, 2) + '\n';
+                const tmpPath = `${MAP_FILE}.tmp`;
+                await fs.writeFile(tmpPath, outText, 'utf8');
+                await fs.rename(tmpPath, MAP_FILE);
+                console.log(`[AgentManager] ✅ Auto-backfilled ${backfilled} agent(s) into agent_map.json`);
+            } catch (e) {
+                console.warn('[AgentManager] Failed to backfill agent_map.json:', e.message);
+            }
+        }
+
+        // 填充内存 Map
+        this.agentMap.clear();
+        for (const alias in mapJson) {
+            const value = mapJson[alias];
+            if (typeof value === 'string') {
+                this.agentMap.set(alias, value);
+            } else if (typeof value === 'object' && value.prompt) {
+                this.agentMap.set(alias, value.prompt);
+            }
+        }
+
+        if (this.debugMode) {
+            console.log(`[AgentManager] Loaded ${this.agentMap.size} agent mappings.`);
+        }
+        this.promptCache.clear();
+        try { require('./notebookResolver').reload(); } catch {}
+        console.log(`[AgentManager] Agent map reloaded (${this.agentMap.size} entries${backfilled > 0 ? ', +' + backfilled + ' auto-discovered' : ''}).`);
+    }
+
+    /**
+     * 扫描 Agent/<Name>/ 目录，生成 { <Name>: { prompt, notebooks } } 形式的 map
+     * notebooks 规则：
+     *   - diary/ 存在 → 挂 "<Name>/diary": "diary"
+     *   - knowledge/ 存在 → 挂 "<Name>/knowledge": "knowledge"
+     *     · knowledge/ 下每个子目录单独挂一条：<subdir名>: "knowledge/<subdir名>"
+     *       （裸名便于直接 {{subdirName}} 引用；冲突时以先扫到的为准）
+     */
+    async _autoDiscoverAgents() {
+        const discovered = {};
+        if (!this.agentDir) return discovered;
+        let entries;
+        try {
+            entries = await fs.readdir(this.agentDir, { withFileTypes: true });
+        } catch {
+            return discovered;
+        }
+
+        for (const ent of entries) {
+            if (!ent.isDirectory()) continue;
+            const subDir = path.join(this.agentDir, ent.name);
+
+            // 1. 提示词文件定位
+            let promptRel = null;
+            const expected = path.join(subDir, `${ent.name}.txt`);
+            if (fsSync.existsSync(expected)) {
+                promptRel = `${ent.name}/${ent.name}.txt`;
+            } else {
+                try {
+                    const files = await fs.readdir(subDir);
+                    const firstTxt = files.find(f => f.toLowerCase().endsWith('.txt'));
+                    if (firstTxt) promptRel = `${ent.name}/${firstTxt}`;
+                } catch {}
+            }
+            if (!promptRel) continue; // 没有 .txt 不算 Agent
+
+            // 2. notebooks 扫描
+            const notebooks = {};
+            const diaryDir = path.join(subDir, 'diary');
+            if (fsSync.existsSync(diaryDir)) {
+                notebooks[`${ent.name}/diary`] = 'diary';
+            }
+            const kDir = path.join(subDir, 'knowledge');
+            if (fsSync.existsSync(kDir)) {
+                notebooks[`${ent.name}/knowledge`] = 'knowledge';
+                try {
+                    const kSubs = await fs.readdir(kDir, { withFileTypes: true });
+                    for (const kSub of kSubs) {
+                        if (!kSub.isDirectory()) continue;
+                        // 裸名作为 notebook key（用户可 {{<name>}} 直接引用）
+                        if (!(kSub.name in notebooks)) {
+                            notebooks[kSub.name] = `knowledge/${kSub.name}`;
+                        }
+                    }
+                } catch {}
+            }
+
+            discovered[ent.name] = { prompt: promptRel, notebooks };
+        }
+        return discovered;
     }
 
     /**

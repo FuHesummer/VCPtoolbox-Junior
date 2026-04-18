@@ -1,5 +1,8 @@
-// modules/migration/dailynote.js
-// 日记分流：上游 dailynote/<分类>/ → Junior Agent/<Name>/diary/（个人）或 knowledge/<名>/（公共）
+// modules/migration/knowledge.js
+// 上游 knowledge/<Name>/ 分流：
+//   - personal: 搬到 Agent/<agentName>/knowledge/<targetName>/
+//   - public  : 搬到 knowledge/<publicDirName || sourceName>/
+//   - skip    : 用户选择跳过
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
@@ -9,18 +12,14 @@ const JUNIOR_AGENT_DIR = path.join(PROJECT_ROOT, 'Agent');
 const JUNIOR_KNOWLEDGE_DIR = path.join(PROJECT_ROOT, 'knowledge');
 
 /**
- * @param {string} sourceRoot 上游根路径
- * @param {Array} items 每项 { sourceName, targetType, agentName?, publicDirName? }
- *   - targetType: 'personal' | 'public' | 'skip'
- *   - personal: agentName 必填，目标 Agent/<agentName>/diary/
- *   - public: publicDirName 可选，默认 '公共<sourceName>'，目标 knowledge/<publicDirName>/
+ * @param {string} sourceRoot
+ * @param {Array} items [{ sourceName, targetType: 'personal'|'public'|'skip', agentName?, publicDirName? }]
  */
-async function migrateDailynote(sourceRoot, items, emitter) {
+async function migrateKnowledge(sourceRoot, items, emitter) {
     const result = { migrated: [], skipped: [], failed: [] };
-    const srcDir = path.join(sourceRoot, 'dailynote');
-
-    if (!fs.existsSync(srcDir)) {
-        emit(emitter, 'warn', 'dailynote', '上游 dailynote/ 目录不存在，跳过');
+    const srcRoot = path.join(sourceRoot, 'knowledge');
+    if (!fs.existsSync(srcRoot)) {
+        emit(emitter, 'warn', 'knowledge', '上游 knowledge/ 目录不存在，跳过');
         return result;
     }
 
@@ -30,7 +29,7 @@ async function migrateDailynote(sourceRoot, items, emitter) {
                 result.skipped.push({ name: item?.sourceName, reason: 'user skipped' });
                 continue;
             }
-            const srcSub = path.join(srcDir, item.sourceName);
+            const srcSub = path.join(srcRoot, item.sourceName);
             if (!fs.existsSync(srcSub)) {
                 result.skipped.push({ name: item.sourceName, reason: 'source missing' });
                 continue;
@@ -42,10 +41,11 @@ async function migrateDailynote(sourceRoot, items, emitter) {
                     result.skipped.push({ name: item.sourceName, reason: 'no agentName for personal' });
                     continue;
                 }
-                targetDir = path.join(JUNIOR_AGENT_DIR, item.agentName, 'diary');
-                targetLabel = `Agent/${item.agentName}/diary`;
+                const subName = item.publicDirName || item.sourceName;
+                targetDir = path.join(JUNIOR_AGENT_DIR, item.agentName, 'knowledge', subName);
+                targetLabel = `Agent/${item.agentName}/knowledge/${subName}`;
             } else if (item.targetType === 'public') {
-                const dirName = (item.publicDirName || `公共${item.sourceName}`).trim();
+                const dirName = (item.publicDirName || item.sourceName).trim();
                 targetDir = path.join(JUNIOR_KNOWLEDGE_DIR, dirName);
                 targetLabel = `knowledge/${dirName}`;
             } else {
@@ -54,20 +54,18 @@ async function migrateDailynote(sourceRoot, items, emitter) {
             }
 
             await fsp.mkdir(targetDir, { recursive: true });
-            // 覆盖策略：直接合并到目标目录（同名文件覆盖）
             const fileCount = await copyDir(srcSub, targetDir, ['VectorStore', 'vectors']);
-
             result.migrated.push({
                 name: item.sourceName,
-                from: `dailynote/${item.sourceName}`,
+                from: `knowledge/${item.sourceName}`,
                 to: targetLabel,
                 fileCount,
             });
-            emit(emitter, 'progress', 'dailynote',
+            emit(emitter, 'progress', 'knowledge',
                 `✅ ${item.sourceName} → ${targetLabel} (${fileCount} 文件)`);
         } catch (e) {
             result.failed.push({ name: item?.sourceName, error: e.message });
-            emit(emitter, 'error', 'dailynote', `❌ ${item?.sourceName}: ${e.message}`);
+            emit(emitter, 'error', 'knowledge', `❌ ${item?.sourceName}: ${e.message}`);
         }
     }
 
@@ -75,30 +73,35 @@ async function migrateDailynote(sourceRoot, items, emitter) {
 }
 
 /**
- * 自动分流：根据 scan.dailynotes 和 Agent 名单生成默认 items
+ * 自动分流：根据 scan.knowledge 和 Agent 名单生成默认 items
  * 规则：
- *   - 名字命中 Agent → personal (搬到 Agent/<Name>/diary/)
- *   - 公共/共享/VCP/Knowledge 前缀 or 明显公共词 → public
- *   - 其余未命中 Agent 的 → public（默认以"公共"前缀存入 knowledge/）
+ *   - 名字命中 Agent → personal
+ *   - 名字以 公共/共享/Public/Shared 开头 → public
+ *   - 其余 → public（目录名前缀"公共"以示区分）
  */
-function autoPlan(dailynoteScan, agentNames) {
-    if (!Array.isArray(dailynoteScan) || dailynoteScan.length === 0) return [];
+function autoPlan(knowledgeScan, agentNames) {
+    if (!Array.isArray(knowledgeScan) || knowledgeScan.length === 0) return [];
     const agentSet = new Set(agentNames || []);
     const items = [];
-    for (const d of dailynoteScan) {
-        if (agentSet.has(d.name)) {
+    for (const k of knowledgeScan) {
+        if (agentSet.has(k.name)) {
             items.push({
-                sourceName: d.name,
+                sourceName: k.name,
                 targetType: 'personal',
-                agentName: d.name,
+                agentName: k.name,
+                publicDirName: k.name,
+            });
+        } else if (/^(公共|共享|Public|Shared)/.test(k.name)) {
+            items.push({
+                sourceName: k.name,
+                targetType: 'public',
+                publicDirName: k.name,
             });
         } else {
-            // scan 已经给了 suggest（启发式），但宁可对未识别的条目默认 public
-            const publicDirName = /^(公共|共享|Public|Shared|VCP)/.test(d.name) ? d.name : `公共${d.name}`;
             items.push({
-                sourceName: d.name,
+                sourceName: k.name,
                 targetType: 'public',
-                publicDirName,
+                publicDirName: k.name,
             });
         }
     }
@@ -110,4 +113,4 @@ function emit(emitter, level, stage, message) {
     emitter.emit('log', { level, stage, message, ts: new Date().toISOString() });
 }
 
-module.exports = { migrateDailynote, autoPlan };
+module.exports = { migrateKnowledge, autoPlan };

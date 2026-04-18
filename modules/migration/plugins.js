@@ -1,11 +1,16 @@
 // modules/migration/plugins.js
-// 策略 A：只迁 Junior 插件仓库（VCPtoolbox-Junior-Plugins）有的插件
-// 自动从仓库安装对应版本 + 将上游插件配置 merge 到新装插件
+// 策略：
+//   1. builtin（本体 16 核心）→ 跳过（已在 Plugin/）
+//   2. localRepo（sibling 目录 VCPtoolbox-Junior-Plugins 存在）→ 本地 copy
+//   3. remoteStore（走 modules/pluginStore.js 从 GitHub 下载 tarball）→ 网络安装
+//   4. notAvailable（三类都不匹配）→ 跳过 + 清晰告知用户
+// 所有安装成功的插件都把上游 config.env 同名字段值 merge 进来。
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const { PROJECT_ROOT, copyDir, dirSize } = require('./utils');
 const { parseEnv } = require('./config');
+const pluginStore = require('../pluginStore');
 
 const JUNIOR_PLUGIN_DIR = path.join(PROJECT_ROOT, 'Plugin');
 
@@ -24,53 +29,87 @@ function resolvePluginsRepoRoot() {
 }
 
 /**
- * 匹配上游插件清单与 Junior 插件仓库
- * @param {Array} upstreamPlugins scan.js 输出的插件清单 [{ name, enabled, configFiles, ... }]
- * @returns {Promise<{ installable, builtin, notInRepo }>}
+ * 匹配上游插件清单与 Junior 多源（本地仓库 + 远程商店）
+ * @param {Array} upstreamPlugins scan.js 输出 [{ name, enabled, configFiles, size, ... }]
+ * @returns {Promise<{ installable, builtin, notAvailable, sources }>}
+ *   installable 合并 localRepo + remoteStore，每条带 source 字段标识来源
  */
 async function matchPlugins(upstreamPlugins) {
-    const result = { installable: [], builtin: [], notInRepo: [] };
+    const result = {
+        installable: [],
+        builtin: [],
+        notAvailable: [],
+    };
     const repoRoot = resolvePluginsRepoRoot();
     const repoExists = fs.existsSync(repoRoot);
+
+    // 并发拿远程商店清单（失败不影响本地）
+    let remoteSet = new Set();
+    let remoteInfo = new Map();
+    try {
+        const remote = await pluginStore.listRemote();
+        for (const r of remote) {
+            remoteSet.add(r.name);
+            remoteInfo.set(r.name, r);
+        }
+    } catch (e) {
+        console.warn('[migration/plugins] listRemote 失败，仅用本地仓库匹配:', e.message);
+    }
 
     for (const p of upstreamPlugins) {
         if (BUILTIN_CORE.has(p.name)) {
             result.builtin.push({ name: p.name, reason: 'Junior 内置核心，本体已包含' });
             continue;
         }
-        if (!repoExists) {
-            result.notInRepo.push({
+
+        // 优先级 1: 本地插件仓库
+        const repoPluginDir = repoExists ? path.join(repoRoot, p.name) : null;
+        if (repoPluginDir && fs.existsSync(repoPluginDir)) {
+            const manifestExists = fs.existsSync(path.join(repoPluginDir, 'plugin-manifest.json'));
+            const manifestBlock = fs.existsSync(path.join(repoPluginDir, 'plugin-manifest.json.block'));
+            const repoSize = await dirSize(repoPluginDir);
+            result.installable.push({
                 name: p.name,
-                reason: '插件仓库未找到（PLUGINS_REPO_PATH 未配置）',
+                source: 'localRepo',
+                upstreamSize: p.size,
+                repoSize,
+                hasUpstreamConfig: (p.configFiles || []).includes('config.env'),
+                repoDefaultEnabled: manifestExists,
+                repoBlocked: manifestBlock && !manifestExists,
+                upstreamEnabled: p.enabled,
             });
             continue;
         }
-        const repoPluginDir = path.join(repoRoot, p.name);
-        if (!fs.existsSync(repoPluginDir)) {
-            result.notInRepo.push({
+
+        // 优先级 2: 远程商店
+        if (remoteSet.has(p.name)) {
+            const info = remoteInfo.get(p.name) || {};
+            result.installable.push({
                 name: p.name,
-                reason: `Junior 插件仓库无此插件，请提交 PR 到 VCPtoolbox-Junior-Plugins`,
+                source: 'remoteStore',
+                upstreamSize: p.size,
+                remoteVersion: info.version,
+                remoteDisplayName: info.displayName,
+                remoteDescription: info.description,
+                hasUpstreamConfig: (p.configFiles || []).includes('config.env'),
+                upstreamEnabled: p.enabled,
             });
             continue;
         }
-        const manifestExists = fs.existsSync(path.join(repoPluginDir, 'plugin-manifest.json'));
-        const manifestBlock = fs.existsSync(path.join(repoPluginDir, 'plugin-manifest.json.block'));
-        const repoSize = await dirSize(repoPluginDir);
-        result.installable.push({
+
+        // 都没有
+        result.notAvailable.push({
             name: p.name,
-            upstreamSize: p.size,
-            repoSize,
-            hasUpstreamConfig: (p.configFiles || []).includes('config.env'),
-            repoDefaultEnabled: manifestExists,
-            repoBlocked: manifestBlock && !manifestExists,
-            upstreamEnabled: p.enabled,
+            reason: 'Junior 本体/本地仓库/远程商店均不包含，迁移时自动跳过',
         });
     }
 
     return {
         ...result,
-        repoRoot,
-        repoExists,
+        sources: {
+            localRepoPath: repoExists ? repoRoot : null,
+            remoteStoreSize: remoteSet.size,
+        },
     };
 }
 
@@ -175,15 +214,96 @@ async function mergePluginConfig(sourceRoot, pluginName, destDir) {
     return { applied, total: Object.keys(srcMap).length };
 }
 
+/**
+ * 从远程商店安装（走 pluginStore.install），然后 merge 上游 config
+ * @param {string} pluginName
+ * @param {string} sourceRoot 上游根
+ * @param {object} opts { mergeConfig, copyVectorStore, enable }
+ */
+async function installPluginFromRemote(pluginName, sourceRoot, opts, emitter) {
+    opts = opts || {};
+    emit(emitter, 'progress', 'plugins', `🌐 ${pluginName} 从远程商店下载...`);
+    const res = await pluginStore.install(pluginName, { force: true });
+    if (!res.success) {
+        throw new Error(`远程安装失败: ${res.message}`);
+    }
+    emit(emitter, 'progress', 'plugins', `   ${res.message}`);
+
+    const destDir = path.join(JUNIOR_PLUGIN_DIR, pluginName);
+
+    // 处理 enable/block
+    const manifestPath = path.join(destDir, 'plugin-manifest.json');
+    const manifestBlockPath = path.join(destDir, 'plugin-manifest.json.block');
+    if (opts.enable === true && fs.existsSync(manifestBlockPath) && !fs.existsSync(manifestPath)) {
+        await fsp.rename(manifestBlockPath, manifestPath);
+        emit(emitter, 'progress', 'plugins', `   启用 ${pluginName}`);
+    } else if (opts.enable === false && fs.existsSync(manifestPath)) {
+        await fsp.rename(manifestPath, manifestBlockPath);
+        emit(emitter, 'progress', 'plugins', `   禁用 ${pluginName}`);
+    }
+
+    // merge 上游 config.env
+    let configResult = null;
+    if (opts.mergeConfig) {
+        configResult = await mergePluginConfig(sourceRoot, pluginName, destDir);
+        if (configResult?.applied > 0) {
+            emit(emitter, 'progress', 'plugins',
+                `   config.env merged（${configResult.applied} 字段来自上游）`);
+        }
+    }
+
+    // copy 上游 VectorStore（可选）
+    let vectorResult = null;
+    if (opts.copyVectorStore) {
+        const srcVec = path.join(sourceRoot, 'Plugin', pluginName, 'VectorStore');
+        if (fs.existsSync(srcVec)) {
+            const destVec = path.join(destDir, 'VectorStore');
+            await fsp.mkdir(destVec, { recursive: true });
+            const count = await copyDir(srcVec, destVec, []);
+            vectorResult = { fileCount: count };
+            emit(emitter, 'progress', 'plugins', `   VectorStore copied（${count} 文件）`);
+        }
+    }
+
+    return {
+        name: pluginName,
+        installedFrom: 'remoteStore',
+        configMerged: configResult,
+        vectorStore: vectorResult,
+    };
+}
+
+/**
+ * 批量安装：按 item.source 字段路由到本地 / 远程
+ *   - localRepo → installPluginFromRepo
+ *   - remoteStore → installPluginFromRemote
+ * 若 item 未带 source 字段（旧 plan 格式），优先本地，失败自动 fallback 远程
+ */
 async function installSelectedPlugins(sourceRoot, selected, emitter) {
     const result = { installed: [], failed: [] };
     for (const item of selected) {
+        const source = item.source || 'auto';
+        const commonOpts = {
+            mergeConfig: item.mergeConfig !== false,
+            copyVectorStore: item.copyVectorStore === true,
+            enable: item.enable !== false,
+        };
         try {
-            const info = await installPluginFromRepo(item.name, sourceRoot, {
-                mergeConfig: item.mergeConfig !== false,
-                copyVectorStore: item.copyVectorStore === true,
-                enable: item.enable !== false,
-            }, emitter);
+            let info;
+            if (source === 'localRepo') {
+                info = await installPluginFromRepo(item.name, sourceRoot, commonOpts, emitter);
+            } else if (source === 'remoteStore') {
+                info = await installPluginFromRemote(item.name, sourceRoot, commonOpts, emitter);
+            } else {
+                // auto：先试本地，失败走远程
+                try {
+                    info = await installPluginFromRepo(item.name, sourceRoot, commonOpts, emitter);
+                } catch (localErr) {
+                    emit(emitter, 'warn', 'plugins',
+                        `${item.name} 本地仓库失败（${localErr.message}），尝试远程商店...`);
+                    info = await installPluginFromRemote(item.name, sourceRoot, commonOpts, emitter);
+                }
+            }
             result.installed.push(info);
         } catch (e) {
             result.failed.push({ name: item.name, error: e.message });
@@ -201,6 +321,7 @@ function emit(emitter, level, stage, message) {
 module.exports = {
     matchPlugins,
     installPluginFromRepo,
+    installPluginFromRemote,
     installSelectedPlugins,
     resolvePluginsRepoRoot,
     BUILTIN_CORE,

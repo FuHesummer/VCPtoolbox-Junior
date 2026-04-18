@@ -57,6 +57,7 @@ async function scanUpstream(sourcePath, opts = {}) {
         scanAt: new Date().toISOString(),
         agents: [],
         dailynotes: [],
+        knowledge: [],
         plugins: [],
         tvs: [],
         images: [],
@@ -70,6 +71,7 @@ async function scanUpstream(sourcePath, opts = {}) {
         await Promise.all([
             scanAgents(root, result),
             scanDailynote(root, result),
+            scanKnowledge(root, result),
             scanPlugins(root, result),
             scanTvs(root, result),
             scanImages(root, result),
@@ -87,6 +89,7 @@ async function scanUpstream(sourcePath, opts = {}) {
     result.summary = {
         agents: result.agents.length,
         dailynotes: result.dailynotes.length,
+        knowledge: result.knowledge.length,
         plugins: result.plugins.length,
         tvs: result.tvs.length,
         images: result.images.length,
@@ -97,21 +100,91 @@ async function scanUpstream(sourcePath, opts = {}) {
     return result;
 }
 
-// 上游 Agent/<Name>.txt 扁平结构
+// 上游 Agent/ 同时支持：
+//   扁平：Agent/<Name>.txt
+//   嵌套：Agent/<Name>/<Name>.txt （+ diary/ + knowledge/ 子目录）
 async function scanAgents(root, result) {
     const agentDir = path.join(root, 'Agent');
     if (!fs.existsSync(agentDir)) return;
     try {
         const entries = await fsp.readdir(agentDir, { withFileTypes: true });
         for (const ent of entries) {
+            // 分支 1: 扁平 <Name>.txt
             if (ent.isFile() && ent.name.endsWith('.txt')) {
                 const name = ent.name.replace(/\.txt$/, '');
                 const filePath = path.join(agentDir, ent.name);
                 const st = await fsp.stat(filePath);
                 result.agents.push({
                     name,
+                    structure: 'flat',
                     promptFile: `Agent/${ent.name}`,
                     size: st.size,
+                    diary: null,
+                    knowledge: [],
+                });
+                continue;
+            }
+            // 分支 2: 嵌套 <Name>/<Name>.txt
+            if (ent.isDirectory()) {
+                const subDir = path.join(agentDir, ent.name);
+                const promptCandidate = path.join(subDir, `${ent.name}.txt`);
+                let promptFile = null;
+                let size = 0;
+                if (fs.existsSync(promptCandidate)) {
+                    const st = await fsp.stat(promptCandidate);
+                    promptFile = `Agent/${ent.name}/${ent.name}.txt`;
+                    size = st.size;
+                } else {
+                    // 兜底：子目录下第一个 .txt
+                    try {
+                        const subFiles = await fsp.readdir(subDir);
+                        const firstTxt = subFiles.find(f => f.endsWith('.txt'));
+                        if (firstTxt) {
+                            const st = await fsp.stat(path.join(subDir, firstTxt));
+                            promptFile = `Agent/${ent.name}/${firstTxt}`;
+                            size = st.size;
+                        }
+                    } catch {}
+                }
+                // 没有 prompt 就算不上 Agent，跳过
+                if (!promptFile) continue;
+
+                // diary 子目录
+                const diaryDir = path.join(subDir, 'diary');
+                let diary = null;
+                if (fs.existsSync(diaryDir)) {
+                    const diaryFiles = await fsp.readdir(diaryDir).catch(() => []);
+                    diary = {
+                        relPath: `Agent/${ent.name}/diary`,
+                        fileCount: diaryFiles.length,
+                        size: await dirSize(diaryDir),
+                    };
+                }
+
+                // knowledge 子目录（可能含多个 notebook 子目录）
+                const knowledgeDir = path.join(subDir, 'knowledge');
+                const knowledge = [];
+                if (fs.existsSync(knowledgeDir)) {
+                    const kEntries = await fsp.readdir(knowledgeDir, { withFileTypes: true }).catch(() => []);
+                    for (const kEnt of kEntries) {
+                        if (!kEnt.isDirectory()) continue;
+                        const kSub = path.join(knowledgeDir, kEnt.name);
+                        knowledge.push({
+                            name: kEnt.name,
+                            relPath: `Agent/${ent.name}/knowledge/${kEnt.name}`,
+                            fileCount: (await fsp.readdir(kSub).catch(() => [])).length,
+                            size: await dirSize(kSub),
+                        });
+                    }
+                }
+
+                result.agents.push({
+                    name: ent.name,
+                    structure: 'nested',
+                    promptFile,
+                    size,
+                    diary,
+                    knowledge,
                 });
             }
         }
@@ -205,6 +278,35 @@ async function scanTvs(root, result) {
             }
         }
     } catch {}
+}
+
+// 上游 knowledge/<分类>/ — 公共知识库 / Agent 同名专属都可能
+async function scanKnowledge(root, result) {
+    const kDir = path.join(root, 'knowledge');
+    if (!fs.existsSync(kDir)) return;
+    try {
+        const entries = await fsp.readdir(kDir, { withFileTypes: true });
+        for (const ent of entries) {
+            if (!ent.isDirectory()) continue;
+            const subDir = path.join(kDir, ent.name);
+            const files = await fsp.readdir(subDir).catch(() => []);
+            const size = await dirSize(subDir);
+            // 启发式：目录名以"公共/共享"开头或以"知识/百科"结尾 → public；
+            // 其他情况如果跟某个 Agent 同名 → personal（migrate 阶段再最终决定）
+            result.knowledge.push({
+                name: ent.name,
+                relPath: `knowledge/${ent.name}`,
+                fileCount: files.length,
+                size,
+                suggest: guessKnowledgeTarget(ent.name),
+            });
+        }
+    } catch {}
+}
+
+function guessKnowledgeTarget(name) {
+    const isPublic = /^(公共|共享|Public|Shared)/.test(name) || /(知识库|百科|Wiki)$/.test(name);
+    return isPublic ? 'public' : 'auto'; // 'auto' 在 autoPlan 阶段根据 Agent 匹配再决定
 }
 
 // 上游 image/<表情包或目录>/

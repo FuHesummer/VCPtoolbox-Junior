@@ -13,6 +13,7 @@ const {
     backupCurrent,
     listBackups,
     executeMigration,
+    generateAutoPlan,
     readHistory,
     lock,
     source,
@@ -87,6 +88,18 @@ router.post('/migration/match-plugins', async (req, res) => {
         const plugins = req.body?.plugins;
         if (!Array.isArray(plugins)) return res.status(400).json({ error: 'plugins array required' });
         const result = await matchPlugins(plugins);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 🪄 智能推荐：一键生成完整默认 plan（Agent 全选 / 日记知识自动分流 / 插件合并本地+远程 / 配置不动）
+router.post('/migration/auto-plan', async (req, res) => {
+    try {
+        const sourcePath = (req.body?.sourcePath || '').trim();
+        if (!sourcePath) return res.status(400).json({ error: 'sourcePath required' });
+        const result = await generateAutoPlan(sourcePath);
         res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });
