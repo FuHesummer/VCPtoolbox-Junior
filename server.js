@@ -129,15 +129,12 @@ const MAX_API_ERRORS = 5;
 let ipBlacklist = [];
 const apiErrorCounts = new Map();
 
-// IP 封禁（改进版）：区分"错误凭据"和"无凭据 DDoS"，cookie 过期不计入失败次数
+// IP 封禁（仅拦截错误密码暴力尝试，无凭据请求不计入）
 const loginAttempts = new Map();
 const tempBlocks = new Map();
-const noCredentialAccess = new Map();
 const MAX_LOGIN_ATTEMPTS = 10;
-const MAX_NO_CREDENTIAL_REQUESTS = 100;
 const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000;
 const TEMP_BLOCK_DURATION = 30 * 60 * 1000;
-const NO_CREDENTIAL_BLOCK_DURATION = 15 * 60 * 1000;
 
 const ChatCompletionHandler = require('./modules/chatCompletionHandler.js');
 
@@ -494,40 +491,22 @@ const adminAuth = (req, res, next) => {
 
         // 4. 验证凭据
         if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
-            // 封禁计数（私有 IP 豁免）
-            if (clientIp && !isPrivateIp && !isReadOnlyPath) {
-                // 关键：只有主动提供了错误凭据才计入失败次数
-                // cookie 过期时 credentials 为 null，不计入，避免面板挂着自动被封
-                const isActiveLoginAttempt = !!credentials;
-                if (isActiveLoginAttempt) {
-                    const now = Date.now();
-                    let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
-                    if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
-                        attemptInfo = { count: 0, firstAttempt: now };
-                    }
-                    attemptInfo.count++;
-                    if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
-                        console.warn(`[AdminAuth] IP ${clientIp} blocked for ${TEMP_BLOCK_DURATION / 60000} min — ${attemptInfo.count} failed login attempts.`);
-                        tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
-                        loginAttempts.delete(clientIp);
-                    } else {
-                        loginAttempts.set(clientIp, attemptInfo);
-                    }
+            // 仅对主动提供错误密码的请求计数（防暴力破解）
+            // 无凭据请求（cookie 过期 / SPA 首次加载 / 反代轮询）不计入
+            const isActiveLoginAttempt = !!credentials;
+            if (clientIp && !isPrivateIp && !isReadOnlyPath && isActiveLoginAttempt) {
+                const now = Date.now();
+                let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
+                if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
+                    attemptInfo = { count: 0, firstAttempt: now };
+                }
+                attemptInfo.count++;
+                if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
+                    console.warn(`[AdminAuth] IP ${clientIp} blocked for ${TEMP_BLOCK_DURATION / 60000} min — ${attemptInfo.count} failed login attempts.`);
+                    tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
+                    loginAttempts.delete(clientIp);
                 } else {
-                    // 无凭据 DDoS 防护：独立计数，阈值更宽松
-                    const now = Date.now();
-                    let accessInfo = noCredentialAccess.get(clientIp) || { count: 0, firstAccess: now };
-                    if (now - accessInfo.firstAccess > LOGIN_ATTEMPT_WINDOW) {
-                        accessInfo = { count: 0, firstAccess: now };
-                    }
-                    accessInfo.count++;
-                    if (accessInfo.count >= MAX_NO_CREDENTIAL_REQUESTS) {
-                        console.warn(`[AdminAuth] IP ${clientIp} blocked for ${NO_CREDENTIAL_BLOCK_DURATION / 60000} min — excessive unauthenticated requests.`);
-                        tempBlocks.set(clientIp, { expires: now + NO_CREDENTIAL_BLOCK_DURATION });
-                        noCredentialAccess.delete(clientIp);
-                    } else {
-                        noCredentialAccess.set(clientIp, accessInfo);
-                    }
+                    loginAttempts.set(clientIp, attemptInfo);
                 }
             }
 

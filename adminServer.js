@@ -20,16 +20,14 @@ const ADMIN_USERNAME = process.env.AdminUsername;
 const ADMIN_PASSWORD = process.env.AdminPassword;
 
 // ============================================================
-// 登录防暴力破解（改进版：cookie 过期不计入 + 私有 IP 豁免）
+// 登录防暴力破解（仅拦截错误密码暴力尝试，不拦截无凭据请求）
+// 无凭据请求（cookie 过期 / SPA 首次加载）不计入，避免反代场景误封
 // ============================================================
 const loginAttempts = new Map();
 const tempBlocks = new Map();
-const noCredentialAccess = new Map();
 const MAX_LOGIN_ATTEMPTS = 10;
-const MAX_NO_CREDENTIAL_REQUESTS = 100;
 const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000;
 const TEMP_BLOCK_DURATION = 30 * 60 * 1000;
-const NO_CREDENTIAL_BLOCK_DURATION = 15 * 60 * 1000;
 
 // ============================================================
 // Express App
@@ -137,34 +135,21 @@ const adminAuth = (req, res, next) => {
     // 验证凭据
     if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
         // 封禁计数（私有 IP 豁免）
-        if (clientIp && !isPrivateIp && !isReadOnlyPath) {
-            const isActiveLoginAttempt = !!credentials;
-            if (isActiveLoginAttempt) {
-                const now = Date.now();
-                let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
-                if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
-                    attemptInfo = { count: 0, firstAttempt: now };
-                }
-                attemptInfo.count++;
-                if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
-                    tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
-                    loginAttempts.delete(clientIp);
-                } else {
-                    loginAttempts.set(clientIp, attemptInfo);
-                }
+        // 仅对主动提供错误密码的请求计数（防暴力破解）
+        // 无凭据请求（cookie 过期 / SPA 首次加载 / 反代轮询）不计入
+        const isActiveLoginAttempt = !!credentials;
+        if (clientIp && !isPrivateIp && !isReadOnlyPath && isActiveLoginAttempt) {
+            const now = Date.now();
+            let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
+            if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
+                attemptInfo = { count: 0, firstAttempt: now };
+            }
+            attemptInfo.count++;
+            if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
+                tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
+                loginAttempts.delete(clientIp);
             } else {
-                const now = Date.now();
-                let accessInfo = noCredentialAccess.get(clientIp) || { count: 0, firstAccess: now };
-                if (now - accessInfo.firstAccess > LOGIN_ATTEMPT_WINDOW) {
-                    accessInfo = { count: 0, firstAccess: now };
-                }
-                accessInfo.count++;
-                if (accessInfo.count >= MAX_NO_CREDENTIAL_REQUESTS) {
-                    tempBlocks.set(clientIp, { expires: now + NO_CREDENTIAL_BLOCK_DURATION });
-                    noCredentialAccess.delete(clientIp);
-                } else {
-                    noCredentialAccess.set(clientIp, accessInfo);
-                }
+                loginAttempts.set(clientIp, attemptInfo);
             }
         }
 
