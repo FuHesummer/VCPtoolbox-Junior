@@ -133,7 +133,11 @@ async function downloadRelease(release, silent = false) {
         if (process.platform === 'win32') {
             execSync(`powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${PANEL_DIR}' -Force"`, { stdio: 'pipe' });
         } else {
-            execSync(`unzip -o "${tempZipPath}" -d "${PANEL_DIR}"`, { stdio: 'pipe' });
+            try {
+                execSync(`unzip -o "${tempZipPath}" -d "${PANEL_DIR}"`, { stdio: 'pipe' });
+            } catch {
+                execSync(`python3 -c "import zipfile; zipfile.ZipFile('${tempZipPath}').extractall('${PANEL_DIR}')"`, { stdio: 'pipe' });
+            }
         }
     } finally {
         await fs.unlink(tempZipPath).catch(() => {});
@@ -209,7 +213,12 @@ function downloadFile(url) {
  */
 async function getCurrentVersion() {
     try {
-        return (await fs.readFile(VERSION_FILE, 'utf-8')).trim();
+        const raw = (await fs.readFile(VERSION_FILE, 'utf-8')).trim();
+        // Compatible with JSON format {"tag":"v2.0.0-beta.5",...} or plain tag string
+        if (raw.startsWith('{')) {
+            try { return JSON.parse(raw).tag || raw; } catch { return raw; }
+        }
+        return raw;
     } catch {
         return null;
     }
