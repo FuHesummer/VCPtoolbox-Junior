@@ -39,3 +39,8 @@
 | 2026-04-19 | 019da197 | 4a0df9c | ✨ feat(migration): VCPBackUp 一键备份/迁移全链路 + 坚果云 WebDAV + 定期调度 | 4 | 1 | high |
 | 2026-04-19 | 019da197 | 27d67d4 | ⚡ perf(folding): 摘要队列节流减缓 429（同步上游 4952cc7） | 3 | 0 | med |
 | 2026-04-19 | 019da197 | 0f66ddb | 🐛 fix(core): Plugin.js spawn 修 DEP0190（shell:true + args 拆分） | 1 | 1 | low |
+| 2026-04-19 | 019da1ef | bbf520a | feat(migration): 迁移 v2 自动发现 + 插件双源 + 智能推荐 | 4 | 0 | med |
+| 2026-04-19 | 019da1ef | e278d87 | fix(admin): VCPAllTools 占位符无条件注册 | 1 | 1 | high |
+| 2026-04-19 | 019da1ef | b5793cd | fix(platform): SEA Windows 弹空白终端修复 | 1 | 1 | high |
+| 2026-04-19 | 019da1ef | 2198feb | chore(release): bump version → v2.0.0-beta.13 | 1 | 0 | low |
+| 2026-04-19 | 019da1ef | df82cf4 | fix(build): esbuild stub @aws-sdk/* 避开 unzipper S3 可选依赖 | 1 | 1 | high |
