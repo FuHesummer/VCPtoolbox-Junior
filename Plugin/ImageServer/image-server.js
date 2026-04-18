@@ -20,7 +20,7 @@ const SECURITY_CONFIG = {
     // 异常检测配置
     ANOMALY_DETECTION: {
         TIME_WINDOW: 30 * 60 * 1000, // 30分钟
-        MAX_UNIQUE_IPS: 5, // 最大不同IP数量
+        MAX_UNIQUE_IPS: 50, // 最大不同IP数量（反代场景需要较高阈值）
         LOCKDOWN_DURATION: 60 * 60 * 1000 // 锁定1小时
     }
 };

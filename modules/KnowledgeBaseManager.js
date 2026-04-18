@@ -693,6 +693,9 @@ class KnowledgeBaseManager {
             const km = this.config.notebookDirs.find(nb => nb.diaryName === `${knowledgeMatch[1]}/knowledge`);
             if (km) return km.diaryName;
         }
+        // Try thinking cluster short name (e.g. "前思维簇" → "thinking/前思维簇")
+        const thinkingMatch = this.config.notebookDirs.find(nb => nb.diaryName === `thinking/${shortName}`);
+        if (thinkingMatch) return thinkingMatch.diaryName;
         return shortName; // no mapping found, use as-is
     }
 
