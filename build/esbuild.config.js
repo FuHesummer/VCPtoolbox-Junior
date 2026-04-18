@@ -71,6 +71,29 @@ const seaNativePlugin = {
     },
 };
 
+/**
+ * @aws-sdk stub 插件
+ * unzipper 有可选的 S3 流式解压功能（s3_v3 方法里 require('@aws-sdk/client-s3')），
+ * 我们只用本地 zip 路径，永远不走到那。但 esbuild bundle 时会尝试解析该 require，
+ * 包没装就报错。把 @aws-sdk/* 全部 stub 成空模块：
+ *   - 构建：不再报 Could not resolve
+ *   - 运行时：即使被意外调用也只是 undefined 取属性，比 MODULE_NOT_FOUND 安全
+ *   - 体积：避免捎带整个 aws-sdk 的大依赖树
+ */
+const stubAwsSdkPlugin = {
+    name: 'stub-aws-sdk',
+    setup(build) {
+        build.onResolve({ filter: /^@aws-sdk\// }, (args) => ({
+            path: args.path,
+            namespace: 'stub-aws-sdk',
+        }));
+        build.onLoad({ filter: /.*/, namespace: 'stub-aws-sdk' }, () => ({
+            contents: 'module.exports = {};',
+            loader: 'js',
+        }));
+    },
+};
+
 async function build() {
     fs.mkdirSync(DIST, { recursive: true });
 
@@ -139,7 +162,7 @@ async function build() {
         format: 'cjs',
         // pm2: optional, try/catch in system.js; its dep tree breaks esbuild
         external: ['pm2'],
-        plugins: [seaNativePlugin],
+        plugins: [seaNativePlugin, stubAwsSdkPlugin],
         sourcemap: false,
         minify: true,
         keepNames: true,
