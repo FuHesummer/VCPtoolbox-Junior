@@ -57,6 +57,7 @@ function registerRoutes(app, adminApiRouter, pluginConfig, projectBasePath) {
   app.use(panelPrefix, require('express').static(panelDir));
 
   // 2. 挂载专供 DailyNotePanel 使用的一套 dailynote API
+  // knowledge/ 为基础路径，dailyNotesRoutes 内部会通过 notebookResolver 扩展 Agent/*/diary 等路径
   const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(projectBasePath, 'knowledge');
   if (debug) {
     console.log(`[DailyNotePanelRouter] Daily note root path: ${dailyNoteRootPath}`);

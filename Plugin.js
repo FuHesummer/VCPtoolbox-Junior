@@ -241,8 +241,8 @@ class PluginManager extends EventEmitter {
             }
 
 
-            // 用完整命令字符串 + shell:true，避免 DEP0190（args 数组与 shell:true 并用会触发废弃警告）
-            const pluginProcess = spawn(plugin.entryPoint.command, { cwd: plugin.basePath, shell: true, env: envForProcess, windowsHide: true });
+            const [spawnCmd, ...spawnArgs] = plugin.entryPoint.command.split(' ');
+            const pluginProcess = spawn(spawnCmd, spawnArgs, { cwd: plugin.basePath, shell: true, env: envForProcess, windowsHide: true });
             this._trackChildProcess(pluginProcess);
             let output = '';
             let errorOutput = '';
@@ -1851,8 +1851,9 @@ class PluginManager extends EventEmitter {
             if (this.debugMode) console.log(`[PluginManager executePlugin Internal] For plugin "${pluginName}", manifest entryPoint command is: "${plugin.entryPoint.command}"`);
             if (this.debugMode) console.log(`[PluginManager executePlugin Internal] Attempting to spawn: "${plugin.entryPoint.command}" in cwd: ${plugin.basePath}`);
 
-            // 用完整命令字符串 + shell:true，避免 DEP0190（args 数组与 shell:true 并用会触发废弃警告）
-            const pluginProcess = spawn(plugin.entryPoint.command, { cwd: plugin.basePath, shell: true, env: finalEnv, windowsHide: true });
+            const [spawnCmd, ...spawnArgs] = plugin.entryPoint.command.split(' ');
+            if (this.debugMode) console.log(`[PluginManager executePlugin Internal] Attempting to spawn command: "${spawnCmd}" with args: [${spawnArgs.join(', ')}] in cwd: ${plugin.basePath}`);
+            const pluginProcess = spawn(spawnCmd, spawnArgs, { cwd: plugin.basePath, shell: true, env: finalEnv, windowsHide: true });
             this._trackChildProcess(pluginProcess);
 
 

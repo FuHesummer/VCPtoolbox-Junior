@@ -94,6 +94,22 @@ class ContextVectorManager {
         if (!Array.isArray(messages)) return;
         const { allowApi = false } = options;
 
+        // 统计计数器
+        const stats = {
+            totalHistoricalAssistantMessages: 0,
+            totalHistoricalUserMessages: 0,
+            vectorizedAssistantMessages: 0,
+            vectorizedUserMessages: 0,
+            exactHashHits: 0,
+            fuzzyHits: 0,
+            embeddingCacheHits: 0,
+            apiGenerated: 0,
+            unresolved: 0,
+            skippedSystemMessages: 0,
+            skippedLastTurnMessages: 0,
+            skippedEmptyMessages: 0
+        };
+
         const newAssistantVectors = [];
         const newUserVectors = [];
 
@@ -103,14 +119,27 @@ class ContextVectorManager {
 
         const tasks = messages.map(async (msg, index) => {
             // 排除逻辑：系统消息、最后一个用户消息、最后一个 AI 消息
-            if (msg.role === 'system') return;
-            if (index === lastUserIndex || index === lastAiIndex) return;
+            if (msg.role === 'system') {
+                stats.skippedSystemMessages++;
+                return;
+            }
+            if (index === lastUserIndex || index === lastAiIndex) {
+                stats.skippedLastTurnMessages++;
+                return;
+            }
+
+            // 统计历史消息角色
+            if (msg.role === 'assistant') stats.totalHistoricalAssistantMessages++;
+            else if (msg.role === 'user') stats.totalHistoricalUserMessages++;
 
             const content = typeof msg.content === 'string'
                 ? msg.content
                 : (Array.isArray(msg.content) ? msg.content.find(p => p.type === 'text')?.text : '') || '';
 
-            if (!content || content.length < 2) return;
+            if (!content || content.length < 2) {
+                stats.skippedEmptyMessages++;
+                return;
+            }
 
             const normalized = this._normalize(content);
             const hash = this._generateHash(normalized);
@@ -120,19 +149,25 @@ class ContextVectorManager {
             // 1. 精确匹配
             if (this.vectorMap.has(hash)) {
                 vector = this.vectorMap.get(hash).vector;
+                stats.exactHashHits++;
             }
             // 2. 模糊匹配 (处理微小编辑)
             else {
                 vector = this._findFuzzyMatch(normalized);
+                if (vector) {
+                    stats.fuzzyHits++;
+                }
 
                 // 3. 尝试从插件的 Embedding 缓存中获取（不触发 API）
                 if (!vector) {
                     vector = this.plugin._getEmbeddingFromCacheOnly(content);
+                    if (vector) stats.embeddingCacheHits++;
                 }
 
                 // 4. 如果缓存也没有，且允许 API，则请求新向量（触发 API）
                 if (!vector && allowApi) {
                     vector = await this.plugin.getSingleEmbeddingCached(content);
+                    if (vector) stats.apiGenerated++;
                 }
 
                 // 存入映射
@@ -150,9 +185,13 @@ class ContextVectorManager {
                 const entry = { vector, index, role: msg.role };
                 if (msg.role === 'assistant') {
                     newAssistantVectors.push(entry);
+                    stats.vectorizedAssistantMessages++;
                 } else if (msg.role === 'user') {
                     newUserVectors.push(entry);
+                    stats.vectorizedUserMessages++;
                 }
+            } else {
+                stats.unresolved++;
             }
         });
 
@@ -162,7 +201,7 @@ class ContextVectorManager {
         this.historyAssistantVectors = newAssistantVectors.sort((a, b) => a.index - b.index).map(v => v.vector);
         this.historyUserVectors = newUserVectors.sort((a, b) => a.index - b.index).map(v => v.vector);
 
-        console.log(`[ContextVectorManager] 上下文向量映射已更新。历史AI向量: ${this.historyAssistantVectors.length}, 历史用户向量: ${this.historyUserVectors.length}`);
+        console.log(`[ContextVectorManager] 上下文向量映射已更新。AI:${stats.vectorizedAssistantMessages}/${stats.totalHistoricalAssistantMessages} User:${stats.vectorizedUserMessages}/${stats.totalHistoricalUserMessages} | exactHash:${stats.exactHashHits} fuzzy:${stats.fuzzyHits} cache:${stats.embeddingCacheHits} api:${stats.apiGenerated} unresolved:${stats.unresolved} | skipped(sys:${stats.skippedSystemMessages} lastTurn:${stats.skippedLastTurnMessages} empty:${stats.skippedEmptyMessages})`);
     }
 
     /**

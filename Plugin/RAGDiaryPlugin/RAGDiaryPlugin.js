@@ -25,9 +25,25 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || 'Asia/Shanghai';
-// 从 DailyNoteGet 插件借鉴的常量和路径逻辑
 const projectBasePath = process.env.PROJECT_BASE_PATH;
-const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'knowledge') : path.join(__dirname, '..', '..', 'knowledge'));
+const _baseDir = projectBasePath || path.join(__dirname, '..', '..');
+const knowledgeRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(_baseDir, 'knowledge');
+const agentRootPath = path.join(_baseDir, 'Agent');
+
+// Junior 适配：上游把日记/知识全放 dailynote/，我们拆成了三个位置
+// 按优先级查找：knowledge/<name> → Agent/<name>/diary → Agent/<name>/knowledge
+function resolveNotebookPath(name) {
+    const fsSync = require('fs');
+    const candidates = [
+        path.join(knowledgeRootPath, name),
+        path.join(agentRootPath, name, 'diary'),
+        path.join(agentRootPath, name, 'knowledge'),
+    ];
+    for (const p of candidates) {
+        if (fsSync.existsSync(p)) return p;
+    }
+    return candidates[0];
+}
 
 const GLOBAL_SIMILARITY_THRESHOLD = 0.6; // 全局默认余弦相似度阈值
 
@@ -125,36 +141,35 @@ class RAGDiaryPlugin {
             if (!currentConfigHash) {
                 console.log('[RAGDiaryPlugin] 未找到 rag_tags.json 文件，跳过缓存处理。');
                 this.ragConfig = {};
-                return;
-            }
-
-            let cache = null;
-            try {
-                const cacheData = await fs.readFile(cachePath, 'utf-8');
-                cache = JSON.parse(cacheData);
-            } catch (e) {
-                console.log('[RAGDiaryPlugin] 缓存文件不存在或已损坏，将重新构建。');
-            }
-
-            if (cache && cache.sourceHash === currentConfigHash) {
-                // --- 缓存命中 ---
-                console.log('[RAGDiaryPlugin] 缓存有效，从磁盘加载向量...');
-                this.ragConfig = JSON.parse(await fs.readFile(configPath, 'utf-8'));
-                this.enhancedVectorCache = cache.vectors;
-                console.log(`[RAGDiaryPlugin] 成功从缓存加载 ${Object.keys(this.enhancedVectorCache).length} 个向量。`);
             } else {
-                // --- 缓存失效或未命中 ---
-                if (cache) {
-                    console.log('[RAGDiaryPlugin] rag_tags.json 已更新，正在重建缓存...');
-                } else {
-                    console.log('[RAGDiaryPlugin] 未找到有效缓存，首次构建向量缓存...');
+                let cache = null;
+                try {
+                    const cacheData = await fs.readFile(cachePath, 'utf-8');
+                    cache = JSON.parse(cacheData);
+                } catch (e) {
+                    console.log('[RAGDiaryPlugin] 缓存文件不存在或已损坏，将重新构建。');
                 }
 
-                const configData = await fs.readFile(configPath, 'utf-8');
-                this.ragConfig = JSON.parse(configData);
+                if (cache && cache.sourceHash === currentConfigHash) {
+                    // --- 缓存命中 ---
+                    console.log('[RAGDiaryPlugin] 缓存有效，从磁盘加载向量...');
+                    this.ragConfig = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+                    this.enhancedVectorCache = cache.vectors;
+                    console.log(`[RAGDiaryPlugin] 成功从缓存加载 ${Object.keys(this.enhancedVectorCache).length} 个向量。`);
+                } else {
+                    // --- 缓存失效或未命中 ---
+                    if (cache) {
+                        console.log('[RAGDiaryPlugin] rag_tags.json 已更新，正在重建缓存...');
+                    } else {
+                        console.log('[RAGDiaryPlugin] 未找到有效缓存，首次构建向量缓存...');
+                    }
 
-                // 调用 _buildAndSaveCache 来生成向量
-                await this._buildAndSaveCache(currentConfigHash, cachePath);
+                    const configData = await fs.readFile(configPath, 'utf-8');
+                    this.ragConfig = JSON.parse(configData);
+
+                    // 调用 _buildAndSaveCache 来生成向量
+                    await this._buildAndSaveCache(currentConfigHash, cachePath);
+                }
             }
 
         } catch (error) {
@@ -165,16 +180,7 @@ class RAGDiaryPlugin {
         // --- 加载元思考链配置 ---
         await this.metaThinkingManager.loadConfig();
 
-        // 🔧 FoldingStore 初始化已移至 initialize() 方法末尾
-        // 原因：loadConfig 可能因 rag_tags.json 不存在而提前 return，导致 FoldingStore 永不初始化
-        //       现在独立于 loadConfig，确保每次插件初始化都会建 store
-    }
-
-    /**
-     * 🔧 独立的 FoldingStore 初始化方法
-     * 从 loadConfig 抽离，避免被 rag_tags.json 缺失的 early-return 跳过
-     */
-    _initializeFoldingStore() {
+        // 🌟 FoldingStore 初始化（内联于 loadConfig 末尾，确保无论 rag_tags.json 是否存在都能初始化）
         try {
             // 防止热重载时产生幽灵实例：如果旧 store 存在，先优雅关闭
             if (this.foldingStore) {
@@ -188,6 +194,9 @@ class RAGDiaryPlugin {
                 maxEntries: parseInt(process.env.FOLDING_STORE_MAX_ENTRIES) || 200,
                 evictCount: parseInt(process.env.FOLDING_STORE_EVICT_COUNT) || 20
             });
+
+            const fsStats = this.foldingStore.getStats();
+            console.log(`[RAGDiaryPlugin] FoldingStore 已初始化 (available: ${fsStats.available}, count: ${fsStats.count}, maxEntries: ${fsStats.maxEntries})`);
         } catch (e) {
             console.error('[RAGDiaryPlugin] FoldingStore 初始化失败，折叠功能将不可用:', e.message);
             this.foldingStore = null;
@@ -314,9 +323,6 @@ class RAGDiaryPlugin {
         await this.loadConfig();
         await this.loadRagParams();
         this._startRagParamsWatcher();
-
-        // 🔧 FoldingStore 独立初始化（不受 loadConfig 的 early-return 影响）
-        this._initializeFoldingStore();
 
         // 启动缓存清理任务
         if (this.queryCacheEnabled) {
@@ -468,13 +474,7 @@ class RAGDiaryPlugin {
     }
 
     async getDiaryContent(characterName) {
-        let characterDirPath;
-        try {
-            const { resolveNotebookPath } = require('../../modules/notebookResolver');
-            characterDirPath = resolveNotebookPath(characterName, dailyNoteRootPath);
-        } catch {
-            characterDirPath = path.join(dailyNoteRootPath, characterName);
-        }
+        const characterDirPath = resolveNotebookPath(characterName);
         let characterDiaryContent = `[${characterName}日记本内容为空]`;
         try {
             const files = await fs.readdir(characterDirPath);
@@ -595,7 +595,7 @@ class RAGDiaryPlugin {
         const truncated = tags.slice(0, targetCount);
 
         if (truncated.length < tags.length) {
-            console.log(`[RAGDiaryPlugin][Truncation] ${tags.length} -> ${truncated.length} tags (Ratio: ${ratio.toFixed(2)}, L:${metrics.L.toFixed(2)}, S:${metrics.S.toFixed(2)})`);
+            console.log(`[RAGDiaryPlugin][Truncation] ${tags.length} -> ${truncated.length} tags (Ratio: ${ratio.toFixed(2)}, L:${(metrics?.L ?? 0).toFixed(2)}, S:${(metrics?.S ?? 0).toFixed(2)})`);
         }
         return truncated;
     }
@@ -2637,8 +2637,7 @@ class RAGDiaryPlugin {
      * 用于 V5 平衡召回逻辑
      */
     async _getTimeRangeFilePaths(dbName, timeRange) {
-        let characterDirPath;
-        try { const { resolveNotebookPath } = require('../../modules/notebookResolver'); characterDirPath = resolveNotebookPath(dbName, dailyNoteRootPath); } catch { characterDirPath = path.join(dailyNoteRootPath, dbName); }
+        const characterDirPath = resolveNotebookPath(dbName);
         let filePathsInRange = [];
 
         if (!timeRange || !timeRange.start || !timeRange.end) return filePathsInRange;
@@ -2678,8 +2677,7 @@ class RAGDiaryPlugin {
 
     async getTimeRangeDiaries(dbName, timeRange) {
         // 此方法保留用于兼容旧逻辑，但 V5 逻辑已转向 _getTimeRangeFilePaths + getChunksByFilePaths
-        let characterDirPath;
-        try { const { resolveNotebookPath } = require('../../modules/notebookResolver'); characterDirPath = resolveNotebookPath(dbName, dailyNoteRootPath); } catch { characterDirPath = path.join(dailyNoteRootPath, dbName); }
+        const characterDirPath = resolveNotebookPath(dbName);
         let diariesInRange = [];
 
         // 确保时间范围有效

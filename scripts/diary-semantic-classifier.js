@@ -41,7 +41,7 @@ const { getEmbeddingsBatch } = require(path.join(PROJECT_ROOT, 'modules', 'Embed
 // 配置
 const config = {
     storePath: process.env.KNOWLEDGEBASE_STORE_PATH || path.join(PROJECT_ROOT, 'VectorStore'),
-    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(PROJECT_ROOT, 'knowledge'),
+    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(PROJECT_ROOT, 'knowledge'), // public knowledge root; Agent diaries at Agent/<name>/diary/
     dbName: 'knowledge_base.sqlite',
     dimension: parseInt(process.env.VECTORDB_DIMENSION) || 3072,
     apiKey: process.env.API_Key,
@@ -51,7 +51,7 @@ const config = {
 
 // 命令行参数定义
 program
-    .option('-s, --source <folder>', '源日记本文件夹名称 (相对于 dailynote)', '')
+    .option('-s, --source <folder>', '源日记本文件夹名称 (相对于 knowledge/ 或 Agent/<name>/diary/)', '')
     .option('-c, --categories <list>', '分类列表 (逗号分隔)', '')
     .option('-f, --filter <word>', '分类名净化屏蔽词 (例如 "小吉的")', '')
     .option('-t, --threshold <number>', '相似度阈值 (0-1), 低于此值不分类', '0.3')

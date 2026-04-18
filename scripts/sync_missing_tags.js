@@ -7,7 +7,7 @@ const Database = require('better-sqlite3');
 require('dotenv').config();
 
 const config = {
-    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, '..', 'knowledge'),
+    rootPath: process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(__dirname, '..', 'knowledge'), // public knowledge root; Agent diaries are at Agent/<name>/diary/
     storePath: process.env.KNOWLEDGEBASE_STORE_PATH || path.join(__dirname, '..', 'VectorStore'),
     ignoreFolders: (process.env.IGNORE_FOLDERS || 'VCP论坛').split(',').map(f => f.trim()).filter(Boolean),
     syncDir: '已整理',

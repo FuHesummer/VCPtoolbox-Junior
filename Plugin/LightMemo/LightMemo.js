@@ -78,7 +78,8 @@ class LightMemoPlugin {
         this.vectorDBManager = null;
         this.getSingleEmbedding = null;
         this.projectBasePath = '';
-        this.dailyNoteRootPath = '';
+        this.knowledgeRootPath = '';
+        this.agentRootPath = '';
         this.rerankConfig = {};
         this.excludedFolders = [];
         this.semanticGroups = null;
@@ -101,7 +102,8 @@ class LightMemoPlugin {
 
     initialize(config, dependencies) {
         this.projectBasePath = config.PROJECT_BASE_PATH || path.join(__dirname, '..', '..');
-        this.dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(this.projectBasePath, 'knowledge');
+        this.knowledgeRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(this.projectBasePath, 'knowledge');
+        this.agentRootPath = path.join(this.projectBasePath, 'Agent');
 
         if (dependencies.vectorDBManager) {
             this.vectorDBManager = dependencies.vectorDBManager;

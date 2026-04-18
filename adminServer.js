@@ -20,8 +20,16 @@ const ADMIN_USERNAME = process.env.AdminUsername;
 const ADMIN_PASSWORD = process.env.AdminPassword;
 
 // ============================================================
-// 登录尝试记录（仅日志，不封禁）
+// 登录防暴力破解（改进版：cookie 过期不计入 + 私有 IP 豁免）
 // ============================================================
+const loginAttempts = new Map();
+const tempBlocks = new Map();
+const noCredentialAccess = new Map();
+const MAX_LOGIN_ATTEMPTS = 10;
+const MAX_NO_CREDENTIAL_REQUESTS = 100;
+const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000;
+const TEMP_BLOCK_DURATION = 30 * 60 * 1000;
+const NO_CREDENTIAL_BLOCK_DURATION = 15 * 60 * 1000;
 
 // ============================================================
 // Express App
@@ -89,6 +97,19 @@ const adminAuth = (req, res, next) => {
         return res.status(503).send('<h1>503</h1><p>Admin credentials not configured.</p>');
     }
 
+    // 检查 IP 是否被临时封禁（私有 IP 豁免，只读接口豁免）
+    if (!isPrivateIp) {
+        const blockInfo = tempBlocks.get(clientIp);
+        if (blockInfo && Date.now() < blockInfo.expires && !isReadOnlyPath) {
+            const timeLeft = Math.ceil((blockInfo.expires - Date.now()) / 1000 / 60);
+            res.setHeader('Retry-After', Math.ceil((blockInfo.expires - Date.now()) / 1000));
+            return res.status(429).json({
+                error: 'Too Many Requests',
+                message: `您的IP已被暂时封禁。请在 ${timeLeft} 分钟后重试。`
+            });
+        }
+    }
+
     // 获取凭据（优先 Header，其次 Cookie）
     let credentials = basicAuth(req);
     if (!credentials && req.headers.cookie) {
@@ -115,6 +136,38 @@ const adminAuth = (req, res, next) => {
 
     // 验证凭据
     if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
+        // 封禁计数（私有 IP 豁免）
+        if (clientIp && !isPrivateIp && !isReadOnlyPath) {
+            const isActiveLoginAttempt = !!credentials;
+            if (isActiveLoginAttempt) {
+                const now = Date.now();
+                let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
+                if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
+                    attemptInfo = { count: 0, firstAttempt: now };
+                }
+                attemptInfo.count++;
+                if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
+                    tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
+                    loginAttempts.delete(clientIp);
+                } else {
+                    loginAttempts.set(clientIp, attemptInfo);
+                }
+            } else {
+                const now = Date.now();
+                let accessInfo = noCredentialAccess.get(clientIp) || { count: 0, firstAccess: now };
+                if (now - accessInfo.firstAccess > LOGIN_ATTEMPT_WINDOW) {
+                    accessInfo = { count: 0, firstAccess: now };
+                }
+                accessInfo.count++;
+                if (accessInfo.count >= MAX_NO_CREDENTIAL_REQUESTS) {
+                    tempBlocks.set(clientIp, { expires: now + NO_CREDENTIAL_BLOCK_DURATION });
+                    noCredentialAccess.delete(clientIp);
+                } else {
+                    noCredentialAccess.set(clientIp, accessInfo);
+                }
+            }
+        }
+
         if (isVerifyEndpoint || req.path.startsWith('/admin_api') ||
             (req.headers.accept && req.headers.accept.includes('application/json'))) {
             return res.status(401).json({ error: 'Unauthorized' });
@@ -127,6 +180,7 @@ const adminAuth = (req, res, next) => {
     }
 
     // 认证成功
+    if (clientIp) loginAttempts.delete(clientIp);
     return next();
 };
 

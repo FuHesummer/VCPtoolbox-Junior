@@ -116,6 +116,7 @@ const toolboxManager = require('./modules/toolboxManager.js');
 const messageProcessor = require('./modules/messageProcessor.js');
 const knowledgeBaseManager = require('./modules/KnowledgeBaseManager.js');
 const pluginManager = require('./Plugin.js');
+const sarPromptManager = require('./modules/sarPromptManager.js');
 const taskScheduler = require('./routes/taskScheduler.js');
 const webSocketServer = require('./modules/WebSocketServer.js');
 const FileFetcherServer = require('./modules/FileFetcherServer.js'); // 引入新的 FileFetcherServer 模块
@@ -128,7 +129,15 @@ const MAX_API_ERRORS = 5;
 let ipBlacklist = [];
 const apiErrorCounts = new Map();
 
-// IP 封禁已移除（反代场景下误封问题）
+// IP 封禁（改进版）：区分"错误凭据"和"无凭据 DDoS"，cookie 过期不计入失败次数
+const loginAttempts = new Map();
+const tempBlocks = new Map();
+const noCredentialAccess = new Map();
+const MAX_LOGIN_ATTEMPTS = 10;
+const MAX_NO_CREDENTIAL_REQUESTS = 100;
+const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000;
+const TEMP_BLOCK_DURATION = 30 * 60 * 1000;
+const NO_CREDENTIAL_BLOCK_DURATION = 15 * 60 * 1000;
 
 const ChatCompletionHandler = require('./modules/chatCompletionHandler.js');
 
@@ -470,20 +479,66 @@ const adminAuth = (req, res, next) => {
             }
         }
 
+        // 2.5 检查 IP 是否被临时封禁（私有 IP 豁免，只读接口豁免）
+        if (!isPrivateIp) {
+            const blockInfo = tempBlocks.get(clientIp);
+            if (blockInfo && Date.now() < blockInfo.expires && !isReadOnlyPath) {
+                const timeLeft = Math.ceil((blockInfo.expires - Date.now()) / 1000 / 60);
+                res.setHeader('Retry-After', Math.ceil((blockInfo.expires - Date.now()) / 1000));
+                return res.status(429).json({
+                    error: 'Too Many Requests',
+                    message: `由于登录失败次数过多，您的IP已被暂时封禁。请在 ${timeLeft} 分钟后重试。`
+                });
+            }
+        }
+
         // 4. 验证凭据
         if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
+            // 封禁计数（私有 IP 豁免）
+            if (clientIp && !isPrivateIp && !isReadOnlyPath) {
+                // 关键：只有主动提供了错误凭据才计入失败次数
+                // cookie 过期时 credentials 为 null，不计入，避免面板挂着自动被封
+                const isActiveLoginAttempt = !!credentials;
+                if (isActiveLoginAttempt) {
+                    const now = Date.now();
+                    let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
+                    if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
+                        attemptInfo = { count: 0, firstAttempt: now };
+                    }
+                    attemptInfo.count++;
+                    if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
+                        console.warn(`[AdminAuth] IP ${clientIp} blocked for ${TEMP_BLOCK_DURATION / 60000} min — ${attemptInfo.count} failed login attempts.`);
+                        tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
+                        loginAttempts.delete(clientIp);
+                    } else {
+                        loginAttempts.set(clientIp, attemptInfo);
+                    }
+                } else {
+                    // 无凭据 DDoS 防护：独立计数，阈值更宽松
+                    const now = Date.now();
+                    let accessInfo = noCredentialAccess.get(clientIp) || { count: 0, firstAccess: now };
+                    if (now - accessInfo.firstAccess > LOGIN_ATTEMPT_WINDOW) {
+                        accessInfo = { count: 0, firstAccess: now };
+                    }
+                    accessInfo.count++;
+                    if (accessInfo.count >= MAX_NO_CREDENTIAL_REQUESTS) {
+                        console.warn(`[AdminAuth] IP ${clientIp} blocked for ${NO_CREDENTIAL_BLOCK_DURATION / 60000} min — excessive unauthenticated requests.`);
+                        tempBlocks.set(clientIp, { expires: now + NO_CREDENTIAL_BLOCK_DURATION });
+                        noCredentialAccess.delete(clientIp);
+                    } else {
+                        noCredentialAccess.set(clientIp, accessInfo);
+                    }
+                }
+            }
+
             // ========== 根据请求类型决定响应方式 ==========
-            // API 请求或验证端点：返回 401 JSON
             if (isVerifyEndpoint || req.path.startsWith('/admin_api') ||
                 (req.headers.accept && req.headers.accept.includes('application/json'))) {
-                // 不设置 WWW-Authenticate 头，避免触发浏览器弹窗
                 return res.status(401).json({ error: 'Unauthorized' });
             }
-            // AdminPanel 页面请求：重定向到登录页面
             else if (req.path.startsWith('/AdminPanel')) {
                 return res.redirect('/AdminPanel/login.html');
             }
-            // 其他情况
             else {
                 res.setHeader('WWW-Authenticate', 'Basic realm="Admin Panel"');
                 return res.status(401).send('<h1>401 Unauthorized</h1><p>Authentication required to access the Admin Panel.</p>');
@@ -491,7 +546,8 @@ const adminAuth = (req, res, next) => {
             // ========== 修改结束 ==========
         }
 
-        // 认证成功
+        // 认证成功，清除失败记录
+        if (clientIp) loginAttempts.delete(clientIp);
         return next();
     }
 
@@ -1273,6 +1329,8 @@ async function startServer() {
     toolboxManager.setTvsDir(TVS_DIR);
     await toolboxManager.initialize(DEBUG_MODE);
     console.log('Toolbox管理器初始化完成。');
+
+    await sarPromptManager.initialize(DEBUG_MODE);
 
     // 🌟 关键修复：在监听端口前完成所有初始化
     await initialize(); // This loads plugins and initializes services

@@ -322,11 +322,16 @@ class AIMemoHandler {
      * 获取日记本的所有文件（基于文件级别）
      */
     async _getDiaryFiles(dbName) {
-        const projectBasePath = process.env.PROJECT_BASE_PATH;
-        const dailyNoteRootPath = process.env.KNOWLEDGEBASE_ROOT_PATH || (projectBasePath ? path.join(projectBasePath, 'knowledge') : path.join(__dirname, '..', '..', 'knowledge'));
-
-        let characterDirPath;
-        try { const { resolveNotebookPath } = require('../../modules/notebookResolver'); characterDirPath = resolveNotebookPath(dbName, dailyNoteRootPath); } catch { characterDirPath = path.join(dailyNoteRootPath, dbName); }
+        const _baseDir = process.env.PROJECT_BASE_PATH || path.join(__dirname, '..', '..');
+        const knowledgeRoot = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(_baseDir, 'knowledge');
+        const agentRoot = path.join(_baseDir, 'Agent');
+        const fsSync = require('fs');
+        const candidates = [
+            path.join(knowledgeRoot, dbName),
+            path.join(agentRoot, dbName, 'diary'),
+            path.join(agentRoot, dbName, 'knowledge'),
+        ];
+        const characterDirPath = candidates.find(p => fsSync.existsSync(p)) || candidates[0];
         const files = [];
 
         try {

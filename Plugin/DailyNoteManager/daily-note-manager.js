@@ -8,7 +8,9 @@ async function processDailyNotes(inputContent) {
         console.error('PROJECT_BASE_PATH environment variable is not set.');
         return { status: 'error', error: '无法确定项目主目录。' };
     }
-    const outputDir = process.env.KNOWLEDGEBASE_ROOT_PATH ? path.join(process.env.KNOWLEDGEBASE_ROOT_PATH, '已整理日记') : path.join(projectBasePath, 'knowledge', '已整理日记');
+    // Junior 适配：整理输出仍然放在公共知识库下
+    const knowledgeRoot = process.env.KNOWLEDGEBASE_ROOT_PATH || path.join(projectBasePath, 'knowledge');
+    const outputDir = path.join(knowledgeRoot, '已整理日记');
     const results = []; // Define results here
 
     try {

@@ -45,6 +45,9 @@ class ContextFoldingV2 {
      * 插件初始化入口（由 PluginManager 调用）
      */
     async initialize(config, dependencies) {
+        // 0. 保存项目根路径到实例（供 _loadHotParams / _startHotParamsWatcher 使用）
+        this._projectBasePath = (config && config.PROJECT_BASE_PATH) || process.env.PROJECT_BASE_PATH || path.join(__dirname, '../../');
+
         // 1. 加载插件独立 config.env
         const envPath = path.join(__dirname, 'config.env');
         dotenv.config({ path: envPath });
@@ -64,16 +67,19 @@ class ContextFoldingV2 {
             return;
         }
 
-        // 3. 验证 FoldingStore 可用性
-        if (!this.contextBridge.foldingStore) {
-            console.warn('[ContextFoldingV2] FoldingStore 不可用，折叠功能将不可用');
-            return;
-        }
-
-        const stats = this.contextBridge.foldingStore.getStats();
-        if (!stats.available) {
-            console.warn('[ContextFoldingV2] FoldingStore 数据库不可用');
-            return;
+        // 3. 延迟验证 FoldingStore 可用性（不阻止初始化，Store 可能稍后就绪）
+        let stats = { count: 0, maxEntries: 0, available: false };
+        try {
+            if (this.contextBridge.foldingStore) {
+                stats = this.contextBridge.foldingStore.getStats();
+                if (!stats.available) {
+                    console.warn('[ContextFoldingV2] FoldingStore 数据库当前不可用，折叠功能将在 Store 就绪后生效');
+                }
+            } else {
+                console.warn('[ContextFoldingV2] FoldingStore 尚未初始化，折叠功能将在 Store 就绪后生效');
+            }
+        } catch (e) {
+            console.warn(`[ContextFoldingV2] FoldingStore 状态检测异常: ${e.message}`);
         }
 
         // 4. 验证摘要 API 配置
@@ -94,8 +100,7 @@ class ContextFoldingV2 {
      * [Junior 协议] 权威路径是 modules/rag_params.json，与 RAGDiaryPlugin / admin /rag-params API 一致
      */
     async _loadHotParams() {
-        const projectBasePath = process.env.PROJECT_BASE_PATH || path.join(__dirname, '../../');
-        const paramsPath = path.join(projectBasePath, 'modules', 'rag_params.json');
+        const paramsPath = path.join(this._projectBasePath, 'modules', 'rag_params.json');
         try {
             const data = await fs.readFile(paramsPath, 'utf-8');
             const allParams = JSON.parse(data);
@@ -112,8 +117,7 @@ class ContextFoldingV2 {
      * 监听 modules/rag_params.json 变更
      */
     _startHotParamsWatcher() {
-        const projectBasePath = process.env.PROJECT_BASE_PATH || path.join(__dirname, '../../');
-        const paramsPath = path.join(projectBasePath, 'modules', 'rag_params.json');
+        const paramsPath = path.join(this._projectBasePath, 'modules', 'rag_params.json');
         if (this._ragParamsWatcher) return;
 
         this._ragParamsWatcher = chokidar.watch(paramsPath, { ignoreInitial: true });
