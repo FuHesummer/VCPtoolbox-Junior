@@ -8,6 +8,7 @@ const schedule = require('node-schedule');
 const dotenv = require('dotenv'); // Ensures dotenv is available
 const FileFetcherServer = require('./modules/FileFetcherServer.js');
 const express = require('express'); // For plugin API routing
+const { hasFoldMarkers, buildDynamicFoldObject } = require('./modules/foldProtocol');
 
 // SEA 兼容：require.resolve 在 SEA 里完全不存在（不是抛错，是 undefined）
 // 改用 require.cache key 遍历匹配，彻底避免调用 require.resolve
@@ -313,15 +314,31 @@ class PluginManager extends EventEmitter {
                         if (trimmedValue.startsWith('{')) {
                             const jsonObj = JSON.parse(trimmedValue);
                             if (jsonObj && jsonObj.vcp_dynamic_fold) {
-                                parsedValue = jsonObj; // 保持对象形式以供折叠处理
+                                parsedValue = jsonObj;
                             } else {
                                 parsedValue = trimmedValue;
                             }
+                        } else if (hasFoldMarkers(trimmedValue)) {
+                            // text-based fold markers → auto-convert to fold object
+                            parsedValue = buildDynamicFoldObject({
+                                content: trimmedValue,
+                                pluginDescription: plugin.description || plugin.displayName || plugin.name || '',
+                                strategy: 'toolbox_block_similarity'
+                            });
                         } else {
                             parsedValue = trimmedValue;
                         }
                     } catch (e) {
-                        parsedValue = newValue.trim();
+                        const trimmed = newValue.trim();
+                        if (hasFoldMarkers(trimmed)) {
+                            parsedValue = buildDynamicFoldObject({
+                                content: trimmed,
+                                pluginDescription: plugin.description || plugin.displayName || plugin.name || '',
+                                strategy: 'toolbox_block_similarity'
+                            });
+                        } else {
+                            parsedValue = trimmed;
+                        }
                     }
                 }
 
@@ -2116,16 +2133,31 @@ class PluginManager extends EventEmitter {
         }
 
         for (const [placeholder, value] of Object.entries(placeholders)) {
-            // 新增逻辑：尝试解析可能的 JSON 折叠对象
+            // 尝试解析 JSON 折叠对象或 text-based fold markers
             let parsedValue = value;
-            if (typeof value === 'string' && value.trim().startsWith('{')) {
-                try {
-                    const jsonObj = JSON.parse(value.trim());
-                    if (jsonObj && jsonObj.vcp_dynamic_fold) {
-                        parsedValue = jsonObj; // 保持对象形式以供折叠处理
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed.startsWith('{')) {
+                    try {
+                        const jsonObj = JSON.parse(trimmed);
+                        if (jsonObj && jsonObj.vcp_dynamic_fold) {
+                            parsedValue = jsonObj;
+                        }
+                    } catch (e) {
+                        if (hasFoldMarkers(trimmed)) {
+                            parsedValue = buildDynamicFoldObject({
+                                content: trimmed,
+                                pluginDescription: placeholder,
+                                strategy: 'toolbox_block_similarity'
+                            });
+                        }
                     }
-                } catch (e) {
-                    // 解析失败说明只是普通的字符串，可以直接忽略错误
+                } else if (hasFoldMarkers(trimmed)) {
+                    parsedValue = buildDynamicFoldObject({
+                        content: trimmed,
+                        pluginDescription: placeholder,
+                        strategy: 'toolbox_block_similarity'
+                    });
                 }
             }
 

@@ -167,12 +167,20 @@ class AgentManager {
      * @param {string} relativePath - 相对于Agent目录的路径
      */
     async scanDirectory(dirPath, relativePath) {
+        // Agent 数据目录，不包含预设文件，跳过扫描
+        const EXCLUDED_DIRS = new Set(['diary', 'knowledge', 'thinking']);
+
         try {
             const entries = await fs.readdir(dirPath, { withFileTypes: true });
-            
+
             for (const entry of entries) {
                 const entryPath = path.join(dirPath, entry.name);
                 const entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+
+                // 跳过 Agent 数据子目录（diary/knowledge/thinking）
+                if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name.toLowerCase())) {
+                    continue;
+                }
                 
                 // 处理符号链接
                 if (entry.isSymbolicLink()) {

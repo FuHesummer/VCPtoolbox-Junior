@@ -128,11 +128,7 @@ const MAX_API_ERRORS = 5;
 let ipBlacklist = [];
 const apiErrorCounts = new Map();
 
-const loginAttempts = new Map();
-const tempBlocks = new Map();
-const MAX_LOGIN_ATTEMPTS = 5; // 15分钟内最多尝试5次
-const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000; // 15分钟的窗口
-const TEMP_BLOCK_DURATION = 30 * 60 * 1000; // 封禁30分钟
+// IP 封禁已移除（反代场景下误封问题）
 
 const ChatCompletionHandler = require('./modules/chatCompletionHandler.js');
 
@@ -417,10 +413,18 @@ const adminAuth = (req, res, next) => {
         }
         // ========== 新增结束 ==========
 
-        let clientIp = req.ip;
-        if (clientIp && clientIp.substr(0, 7) === "::ffff:") {
-            clientIp = clientIp.substr(7);
+        // IP extraction: prefer X-Forwarded-For / X-Real-IP for reverse proxy
+        let clientIp = req.headers['x-real-ip']
+            || (req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : null)
+            || req.ip;
+        if (clientIp && clientIp.startsWith('::ffff:')) {
+            clientIp = clientIp.slice(7);
         }
+
+        // Private/loopback IPs are never banned (reverse proxy, local access)
+        const isPrivateIp = clientIp === '127.0.0.1' || clientIp === '::1'
+            || clientIp.startsWith('10.') || clientIp.startsWith('172.')
+            || clientIp.startsWith('192.168.') || clientIp === 'localhost';
 
         // 1. 检查管理员凭据是否已配置 (这是最高优先级的安全检查)
         if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
@@ -437,19 +441,7 @@ const adminAuth = (req, res, next) => {
             return; // 停止进一步处理
         }
 
-        // 2. 检查IP是否被临时封禁（仅对非只读接口生效）
-        const blockInfo = tempBlocks.get(clientIp);
-        if (blockInfo && Date.now() < blockInfo.expires && !isReadOnlyPath) {
-            console.warn(`[AdminAuth] Blocked login attempt from IP: ${clientIp}. Block expires at ${new Date(blockInfo.expires).toLocaleString()}.`);
-            const timeLeft = Math.ceil((blockInfo.expires - Date.now()) / 1000 / 60);
-            res.setHeader('Retry-After', Math.ceil((blockInfo.expires - Date.now()) / 1000)); // In seconds
-            return res.status(429).json({
-                error: 'Too Many Requests',
-                message: `由于登录失败次数过多，您的IP已被暂时封禁。请在 ${timeLeft} 分钟后重试。`
-            });
-        }
-
-        // 3. 尝试获取凭据（优先 Header，其次 Cookie）
+        // 2. 尝试获取凭据（优先 Header，其次 Cookie）
         let credentials = basicAuth(req);
 
         // 如果 Header 中没有凭据，尝试从 Cookie 中读取
@@ -480,29 +472,7 @@ const adminAuth = (req, res, next) => {
 
         // 4. 验证凭据
         if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
-            // 认证失败，处理登录尝试计数（仅对非只读接口计数）
-            if (clientIp && !isReadOnlyPath) {
-                const now = Date.now();
-                let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
-
-                // 如果时间窗口已过，则重置计数
-                if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
-                    attemptInfo = { count: 0, firstAttempt: now };
-                }
-
-                attemptInfo.count++;
-                console.log(`[AdminAuth] Failed login attempt from IP: ${clientIp}. Count: ${attemptInfo.count}/${MAX_LOGIN_ATTEMPTS}`);
-
-                if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
-                    console.warn(`[AdminAuth] IP ${clientIp} has been temporarily blocked for ${TEMP_BLOCK_DURATION / 60000} minutes due to excessive failed login attempts.`);
-                    tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
-                    loginAttempts.delete(clientIp); // 封禁后清除尝试记录
-                } else {
-                    loginAttempts.set(clientIp, attemptInfo);
-                }
-            }
-
-            // ========== 修改：根据请求类型决定响应方式 ==========
+            // ========== 根据请求类型决定响应方式 ==========
             // API 请求或验证端点：返回 401 JSON
             if (isVerifyEndpoint || req.path.startsWith('/admin_api') ||
                 (req.headers.accept && req.headers.accept.includes('application/json'))) {
@@ -521,10 +491,7 @@ const adminAuth = (req, res, next) => {
             // ========== 修改结束 ==========
         }
 
-        // 4. 认证成功
-        if (clientIp) {
-            loginAttempts.delete(clientIp); // 成功后清除尝试记录
-        }
+        // 认证成功
         return next();
     }
 
