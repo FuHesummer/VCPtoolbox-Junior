@@ -275,6 +275,9 @@ const localModules = [
     'placeholderRegistry', // 占位符注册表
     'maintenance',     // 运维中心（spawn 维护脚本）
     'updateChecker',   // 后端+面板版本更新检测
+    'placeholders',    // 静态占位符值
+    'toolListEditor',  // 工具列表编辑器
+    'newapiMonitor',   // NewAPI 用量监控
 ];
 
 // 日志路径获取函数（本地计算，不依赖主进程 logger 实例）

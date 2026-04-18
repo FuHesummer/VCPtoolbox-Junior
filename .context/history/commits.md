@@ -35,3 +35,4 @@
 | 2026-04-16 | 019d967d | 85828ad | 🐛 fix(lifecycle+arch): 孤儿进程清理 + 打包守 16 核心边界 | 3 | 2 | high |
 | 2026-04-16 | 019d96a5 | e0f13a7 | 👷 ci: v2-beta.1 打包迭代修复（matrix/Docker/shell/adminServer 根因/Release latest）— 聚合 7 commit | 5 | 3 | high |
 | 2026-04-16 | 019d96ba | PENDING | fix(adminServer): Express 5 path-to-regexp + 挂载顺序 + CI 放开下载 | 3 | 1 | high |
+| 2026-04-18 | 019da151 | PENDING | 🔧 chore(admin): adminServer localModules 数组补齐 3 个名字 | 1 | 0 | low |
