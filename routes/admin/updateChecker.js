@@ -57,8 +57,12 @@ function getLocalBackendVersion() {
 
 function getLocalPanelVersion() {
     try {
-        const data = JSON.parse(fs.readFileSync(PANEL_VERSION_FILE, 'utf-8'));
-        return data.tag || data.version || 'unknown';
+        const raw = fs.readFileSync(PANEL_VERSION_FILE, 'utf-8').trim();
+        if (raw.startsWith('{')) {
+            const data = JSON.parse(raw);
+            return data.tag || data.version || 'unknown';
+        }
+        return raw || 'unknown';
     } catch {
         return 'unknown';
     }
