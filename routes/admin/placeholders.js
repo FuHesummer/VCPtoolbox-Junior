@@ -162,9 +162,23 @@ module.exports = function(options) {
                     const toolDesc = pluginDescByTool.get(placeholderKey) || '';
                     list.push({ type: 'tool_description', name: `{{${placeholderKey}}}`, preview: truncatePreview(description), charCount: charCount(description), description: toolDesc });
                 }
-                const vcpDescriptionsList = [...individualPluginDescriptions.values()];
-                const allVcpToolsString = vcpDescriptionsList.length > 0 ? vcpDescriptionsList.join('\n\n---\n\n') : '没有可用的VCP工具描述信息';
-                list.push({ type: 'vcp_all_tools', name: '{{VCPAllTools}}', preview: truncatePreview(allVcpToolsString), charCount: charCount(allVcpToolsString) });
+            }
+            // {{VCPAllTools}} 无条件注册（核心推荐占位符）
+            // 即使当前 individualPluginDescriptions 为空（所有插件未装 / 时序未到），
+            // 前端 PromptEditor 三态 chip 也能识别为 ok —— 避免显示"未知变量"
+            {
+                const vcpDescriptionsList = individualPluginDescriptions
+                    ? [...individualPluginDescriptions.values()]
+                    : [];
+                const allVcpToolsString = vcpDescriptionsList.length > 0
+                    ? vcpDescriptionsList.join('\n\n---\n\n')
+                    : '没有可用的VCP工具描述信息（装任意工具类插件后自动填充）';
+                list.push({
+                    type: 'vcp_all_tools',
+                    name: '{{VCPAllTools}}',
+                    preview: truncatePreview(allVcpToolsString),
+                    charCount: charCount(allVcpToolsString),
+                });
             }
 
             // 7. Image_Key
