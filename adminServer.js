@@ -20,14 +20,8 @@ const ADMIN_USERNAME = process.env.AdminUsername;
 const ADMIN_PASSWORD = process.env.AdminPassword;
 
 // ============================================================
-// 登录防暴力破解（仅拦截错误密码暴力尝试，不拦截无凭据请求）
-// 无凭据请求（cookie 过期 / SPA 首次加载）不计入，避免反代场景误封
+// IP 封禁已完全移除（反代 + SPA 场景下不可用）
 // ============================================================
-const loginAttempts = new Map();
-const tempBlocks = new Map();
-const MAX_LOGIN_ATTEMPTS = 10;
-const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000;
-const TEMP_BLOCK_DURATION = 30 * 60 * 1000;
 
 // ============================================================
 // Express App
@@ -95,17 +89,8 @@ const adminAuth = (req, res, next) => {
         return res.status(503).send('<h1>503</h1><p>Admin credentials not configured.</p>');
     }
 
-    // 检查 IP 是否被临时封禁（私有 IP 豁免，只读接口豁免）
-    if (!isPrivateIp) {
-        const blockInfo = tempBlocks.get(clientIp);
-        if (blockInfo && Date.now() < blockInfo.expires && !isReadOnlyPath) {
-            const timeLeft = Math.ceil((blockInfo.expires - Date.now()) / 1000 / 60);
-            res.setHeader('Retry-After', Math.ceil((blockInfo.expires - Date.now()) / 1000));
-            return res.status(429).json({
-                error: 'Too Many Requests',
-                message: `您的IP已被暂时封禁。请在 ${timeLeft} 分钟后重试。`
-            });
-        }
+    // IP 封禁已移除（反代 + SPA 场景不兼容）
+    if (false) {
     }
 
     // 获取凭据（优先 Header，其次 Cookie）
@@ -134,25 +119,6 @@ const adminAuth = (req, res, next) => {
 
     // 验证凭据
     if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
-        // 封禁计数（私有 IP 豁免）
-        // 仅对主动提供错误密码的请求计数（防暴力破解）
-        // 无凭据请求（cookie 过期 / SPA 首次加载 / 反代轮询）不计入
-        const isActiveLoginAttempt = !!credentials;
-        if (clientIp && !isPrivateIp && !isReadOnlyPath && isActiveLoginAttempt) {
-            const now = Date.now();
-            let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
-            if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
-                attemptInfo = { count: 0, firstAttempt: now };
-            }
-            attemptInfo.count++;
-            if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
-                tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
-                loginAttempts.delete(clientIp);
-            } else {
-                loginAttempts.set(clientIp, attemptInfo);
-            }
-        }
-
         if (isVerifyEndpoint || req.path.startsWith('/admin_api') ||
             (req.headers.accept && req.headers.accept.includes('application/json'))) {
             return res.status(401).json({ error: 'Unauthorized' });
@@ -165,7 +131,6 @@ const adminAuth = (req, res, next) => {
     }
 
     // 认证成功
-    if (clientIp) loginAttempts.delete(clientIp);
     return next();
 };
 

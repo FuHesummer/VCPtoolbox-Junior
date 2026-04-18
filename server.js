@@ -129,12 +129,7 @@ const MAX_API_ERRORS = 5;
 let ipBlacklist = [];
 const apiErrorCounts = new Map();
 
-// IP 封禁（仅拦截错误密码暴力尝试，无凭据请求不计入）
-const loginAttempts = new Map();
-const tempBlocks = new Map();
-const MAX_LOGIN_ATTEMPTS = 10;
-const LOGIN_ATTEMPT_WINDOW = 15 * 60 * 1000;
-const TEMP_BLOCK_DURATION = 30 * 60 * 1000;
+// IP 封禁已完全移除（反代 + SPA 场景下不可用）
 
 const ChatCompletionHandler = require('./modules/chatCompletionHandler.js');
 
@@ -477,39 +472,8 @@ const adminAuth = (req, res, next) => {
         }
 
         // 2.5 检查 IP 是否被临时封禁（私有 IP 豁免，只读接口豁免）
-        if (!isPrivateIp) {
-            const blockInfo = tempBlocks.get(clientIp);
-            if (blockInfo && Date.now() < blockInfo.expires && !isReadOnlyPath) {
-                const timeLeft = Math.ceil((blockInfo.expires - Date.now()) / 1000 / 60);
-                res.setHeader('Retry-After', Math.ceil((blockInfo.expires - Date.now()) / 1000));
-                return res.status(429).json({
-                    error: 'Too Many Requests',
-                    message: `由于登录失败次数过多，您的IP已被暂时封禁。请在 ${timeLeft} 分钟后重试。`
-                });
-            }
-        }
-
         // 4. 验证凭据
         if (!credentials || credentials.name !== ADMIN_USERNAME || credentials.pass !== ADMIN_PASSWORD) {
-            // 仅对主动提供错误密码的请求计数（防暴力破解）
-            // 无凭据请求（cookie 过期 / SPA 首次加载 / 反代轮询）不计入
-            const isActiveLoginAttempt = !!credentials;
-            if (clientIp && !isPrivateIp && !isReadOnlyPath && isActiveLoginAttempt) {
-                const now = Date.now();
-                let attemptInfo = loginAttempts.get(clientIp) || { count: 0, firstAttempt: now };
-                if (now - attemptInfo.firstAttempt > LOGIN_ATTEMPT_WINDOW) {
-                    attemptInfo = { count: 0, firstAttempt: now };
-                }
-                attemptInfo.count++;
-                if (attemptInfo.count >= MAX_LOGIN_ATTEMPTS) {
-                    console.warn(`[AdminAuth] IP ${clientIp} blocked for ${TEMP_BLOCK_DURATION / 60000} min — ${attemptInfo.count} failed login attempts.`);
-                    tempBlocks.set(clientIp, { expires: now + TEMP_BLOCK_DURATION });
-                    loginAttempts.delete(clientIp);
-                } else {
-                    loginAttempts.set(clientIp, attemptInfo);
-                }
-            }
-
             // ========== 根据请求类型决定响应方式 ==========
             if (isVerifyEndpoint || req.path.startsWith('/admin_api') ||
                 (req.headers.accept && req.headers.accept.includes('application/json'))) {
@@ -525,8 +489,7 @@ const adminAuth = (req, res, next) => {
             // ========== 修改结束 ==========
         }
 
-        // 认证成功，清除失败记录
-        if (clientIp) loginAttempts.delete(clientIp);
+        // 认证成功
         return next();
     }
 
