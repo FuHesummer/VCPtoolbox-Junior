@@ -4,7 +4,6 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
-const dotenv = require('dotenv');
 const chokidar = require('chokidar');
 
 const FOLDING_PREFIX = '[VCP上下文语义折叠-本层摘要:';
@@ -48,10 +47,7 @@ class ContextFoldingV2 {
         // 0. 保存项目根路径到实例（供 _loadHotParams / _startHotParamsWatcher 使用）
         this._projectBasePath = (config && config.PROJECT_BASE_PATH) || process.env.PROJECT_BASE_PATH || path.join(__dirname, '../../');
 
-        // 1. 加载插件独立 config.env
-        const envPath = path.join(__dirname, 'config.env');
-        dotenv.config({ path: envPath });
-
+        // 1. 从根 config.env 读取（插件 config.env 已废弃，配置统一到根目录）
         this.summaryModel = process.env.FOLDING_SUMMARY_MODEL || 'gemini-3.1-flash-lite-preview';
         this.summarySystemPrompt = (process.env.FOLDING_SUMMARY_SYSTEM_PROMPT || '').replace(/\\n/g, '\n');
         this.summaryUserPrompt = (process.env.FOLDING_SUMMARY_USER_PROMPT || '').replace(/\\n/g, '\n');

@@ -13,6 +13,7 @@
     { "path": "DebugLog",               "type": "dir" },
     { "path": "VCPTimedContacts",       "type": "dir" },
     { "path": "VCPAsyncResults",        "type": "dir" },
+    { "path": "data",                   "type": "dir",  "sync": "merge" },
     { "path": "agent_map.json",         "type": "file", "sync": "merge" },
     { "path": "ModelRedirect.json",     "type": "file" },
     { "path": "preprocessor_order.json","type": "file" },

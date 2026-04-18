@@ -339,6 +339,9 @@ const localAdminModules = {
     placeholderRegistry: require('./routes/admin/placeholderRegistry'),
     maintenance:       require('./routes/admin/maintenance'),
     updateChecker:     require('./routes/admin/updateChecker'),
+    placeholders:      require('./routes/admin/placeholders'),
+    toolListEditor:    require('./routes/admin/toolListEditor'),
+    newapiMonitor:     require('./routes/admin/newapiMonitor'),
 };
 
 for (const [moduleName, moduleFactory] of Object.entries(localAdminModules)) {

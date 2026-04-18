@@ -1,6 +1,6 @@
 {
   "name": "vcptoolbox",
-  "version": "2.0.0-beta.11",
+  "version": "2.0.0-beta.12",
   "main": "Server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
