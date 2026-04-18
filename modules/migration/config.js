@@ -5,6 +5,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const { PROJECT_ROOT } = require('./utils');
+const { resolveSource } = require('./source');
 
 const JUNIOR_ENV = path.join(PROJECT_ROOT, 'config.env');
 const JUNIOR_ENV_EXAMPLE = path.join(PROJECT_ROOT, 'config.env.example');
@@ -34,17 +35,41 @@ function parseEnv(text) {
  * - sameValue：两边都有且值相等
  * - juniorOnly：仅 Junior 有（保留，不在 UI 展示）
  */
-async function diffConfigEnv(sourceRoot) {
-    // 优先 config.env，fallback 到 config.env.example（仓库 clone 场景常见）
-    let sourceEnvPath = path.join(sourceRoot, 'config.env');
-    let usedExample = false;
-    if (!fs.existsSync(sourceEnvPath)) {
-        sourceEnvPath = path.join(sourceRoot, 'config.env.example');
-        usedExample = true;
+async function diffConfigEnv(sourceRoot, opts = {}) {
+    // 支持 zip 源：若 sourceRoot 是 .zip / VCPBackUp 包则自动解压，函数末尾自动 cleanup
+    let resolved = opts.preResolved || null;
+    let needCleanup = false;
+    if (!resolved) {
+        try {
+            resolved = await resolveSource(sourceRoot);
+            needCleanup = !opts.keepTemp;
+        } catch (e) {
+            return { available: false, reason: `解析源失败: ${e.message}` };
+        }
     }
-    if (!fs.existsSync(sourceEnvPath)) {
-        return { available: false, reason: '上游 config.env / config.env.example 均不存在' };
+    const realRoot = resolved.tempRoot;
+
+    try {
+        // 优先 config.env，fallback 到 config.env.example（仓库 clone 场景常见）
+        let sourceEnvPath = path.join(realRoot, 'config.env');
+        let usedExample = false;
+        if (!fs.existsSync(sourceEnvPath)) {
+            sourceEnvPath = path.join(realRoot, 'config.env.example');
+            usedExample = true;
+        }
+        if (!fs.existsSync(sourceEnvPath)) {
+            return { available: false, reason: '上游 config.env / config.env.example 均不存在' };
+        }
+        const result = await _doDiff(sourceEnvPath, usedExample);
+        return result;
+    } finally {
+        if (needCleanup && resolved) {
+            try { await resolved.cleanup(); } catch {}
+        }
     }
+}
+
+async function _doDiff(sourceEnvPath, usedExample) {
     const srcText = await fsp.readFile(sourceEnvPath, 'utf8');
     const juniorPath = fs.existsSync(JUNIOR_ENV) ? JUNIOR_ENV : JUNIOR_ENV_EXAMPLE;
     const junText = fs.existsSync(juniorPath) ? await fsp.readFile(juniorPath, 'utf8') : '';

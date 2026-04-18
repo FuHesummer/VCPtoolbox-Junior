@@ -1,24 +1,59 @@
 // modules/migration/scan.js
-// 源目录扫描器：识别上游 VCPToolBox 目录结构，输出可迁移资产清单
+// 源目录扫描器：识别上游 VCPToolBox / VCPBackUp 产出 zip 解压目录，输出可迁移资产清单
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const { isValidUpstreamRoot, dirSize } = require('./utils');
+const { resolveSource, validateSourceRoot, SOURCE_TYPE } = require('./source');
 
 // 已知的向量索引子目录名（用于识别）
 const VECTOR_SUBDIRS = ['VectorStore', 'vector_store', 'vectors', 'db'];
 
-async function scanUpstream(sourcePath) {
+/**
+ * @param {string} sourcePath 本地目录或 VCPBackUp 产出 zip 的绝对路径
+ * @param {object} opts { strict?: bool, preResolved?: { tempRoot, type } }
+ *   - strict: 严格模式要求 Plugin.js/server.js（原生 VCPToolBox 目录）
+ *   - preResolved: 已解析过的源（内部复用，避免重复解压）
+ */
+async function scanUpstream(sourcePath, opts = {}) {
     if (!sourcePath || !fs.existsSync(sourcePath)) {
         return { valid: false, reason: 'path not exists', sourcePath };
     }
-    if (!isValidUpstreamRoot(sourcePath)) {
-        return { valid: false, reason: 'not a VCPToolBox root (missing Plugin.js/server.js/Plugin/Agent/TVStxt)', sourcePath };
+
+    // 1. 解析源类型（dir/zip），zip 自动解压到临时目录
+    let resolved;
+    let cleanupNeeded = false;
+    if (opts.preResolved) {
+        resolved = opts.preResolved;
+    } else {
+        try {
+            resolved = await resolveSource(sourcePath);
+            cleanupNeeded = !opts.keepTemp;
+        } catch (e) {
+            return { valid: false, reason: `解析源失败: ${e.message}`, sourcePath };
+        }
+    }
+
+    const root = resolved.tempRoot;
+    const isDir = resolved.type === SOURCE_TYPE.DIR;
+
+    // 目录合法性：严格模式需完整 VCPToolBox；宽松模式仅需 Agent/TVStxt/Plugin 任一
+    const isValid = opts.strict
+        ? isValidUpstreamRoot(root)
+        : (isDir ? (isValidUpstreamRoot(root) || validateSourceRoot(root, false)) : validateSourceRoot(root, false));
+
+    if (!isValid) {
+        if (cleanupNeeded) await resolved.cleanup().catch(() => {});
+        const hint = isDir
+            ? 'not a VCPToolBox root (missing Plugin.js/server.js/Plugin/Agent/TVStxt)'
+            : 'zip 解压后未找到 Agent/TVStxt/Plugin 任一目录';
+        return { valid: false, reason: hint, sourcePath, sourceType: resolved.type };
     }
 
     const result = {
         valid: true,
         sourcePath,
+        sourceType: resolved.type,
         scanAt: new Date().toISOString(),
         agents: [],
         dailynotes: [],
@@ -31,18 +66,22 @@ async function scanUpstream(sourcePath) {
         summary: {},
     };
 
-    await Promise.all([
-        scanAgents(sourcePath, result),
-        scanDailynote(sourcePath, result),
-        scanPlugins(sourcePath, result),
-        scanTvs(sourcePath, result),
-        scanImages(sourcePath, result),
-        scanConfigEnv(sourcePath, result),
-        scanAgentMap(sourcePath, result),
-    ]);
+    try {
+        await Promise.all([
+            scanAgents(root, result),
+            scanDailynote(root, result),
+            scanPlugins(root, result),
+            scanTvs(root, result),
+            scanImages(root, result),
+            scanConfigEnv(root, result),
+            scanAgentMap(root, result),
+        ]);
 
-    // 向量索引扫描依赖插件清单，放在最后
-    await scanVectors(sourcePath, result);
+        // 向量索引扫描依赖插件清单，放在最后
+        await scanVectors(root, result);
+    } finally {
+        if (cleanupNeeded) await resolved.cleanup().catch(() => {});
+    }
 
     // 汇总
     result.summary = {

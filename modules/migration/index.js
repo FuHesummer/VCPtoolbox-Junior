@@ -14,6 +14,7 @@ const { migrateTvs, migrateImages } = require('./assets');
 const { migrateVectors } = require('./vectors');
 const { diffConfigEnv, applyMerge } = require('./config');
 const { matchPlugins, installSelectedPlugins, BUILTIN_CORE } = require('./plugins');
+const { resolveSource } = require('./source');
 
 const HISTORY_FILE = path.join(PROJECT_ROOT, 'data', 'migration-history.json');
 const MAX_HISTORY = 50;
@@ -46,12 +47,22 @@ function executeMigration(plan) {
 
     // 异步推进
     (async () => {
+        let resolved = null;
         try {
-            // 0. 扫描源（获取必要上下文，如插件清单供向量迁移用）
+            // 0. 解析源（dir / zip 自动解压到临时目录），后续统一用 resolved.tempRoot
             emit(emitter, 'info', 'init', '开始迁移...');
-            const scan = await scanUpstream(plan.sourcePath);
+            resolved = await resolveSource(plan.sourcePath);
+            summary.sourceType = resolved.type;
+            if (resolved.type !== 'dir') {
+                emit(emitter, 'progress', 'init',
+                    `已解压源包 (${resolved.type}) → ${resolved.tempRoot}`);
+            }
+            const sourceRoot = resolved.tempRoot;
+
+            // 0.1 扫描源（复用已 resolved 的临时目录）
+            const scan = await scanUpstream(plan.sourcePath, { preResolved: resolved });
             if (!scan.valid) {
-                throw new Error(`源目录无效：${scan.reason}`);
+                throw new Error(`源无效：${scan.reason}`);
             }
 
             // 1. 备份
@@ -67,7 +78,7 @@ function executeMigration(plan) {
             // 2. Agents
             if (plan.agents && plan.agents.length > 0) {
                 emit(emitter, 'info', 'agents', `👤 迁移 Agent（${plan.agents.length}个）...`);
-                summary.stages.agents = await migrateAgents(plan.sourcePath, plan.agents, emitter);
+                summary.stages.agents = await migrateAgents(sourceRoot, plan.agents, emitter);
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
@@ -75,21 +86,21 @@ function executeMigration(plan) {
             if (plan.dailynotes && plan.dailynotes.length > 0) {
                 emit(emitter, 'info', 'dailynote', `📔 迁移日记（${plan.dailynotes.length}类）...`);
                 summary.stages.dailynote = await migrateDailynote(
-                    plan.sourcePath, plan.dailynotes, emitter);
+                    sourceRoot, plan.dailynotes, emitter);
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
             // 4. TVS
             if (plan.tvs && plan.tvs.length > 0) {
                 emit(emitter, 'info', 'tvs', `🎨 迁移 TVS 变量（${plan.tvs.length}个）...`);
-                summary.stages.tvs = await migrateTvs(plan.sourcePath, plan.tvs, emitter);
+                summary.stages.tvs = await migrateTvs(sourceRoot, plan.tvs, emitter);
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
             // 5. Images
             if (plan.images && plan.images.length > 0) {
                 emit(emitter, 'info', 'images', `🖼 迁移图片资源（${plan.images.length}组）...`);
-                summary.stages.images = await migrateImages(plan.sourcePath, plan.images, emitter);
+                summary.stages.images = await migrateImages(sourceRoot, plan.images, emitter);
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
@@ -97,7 +108,7 @@ function executeMigration(plan) {
             if (plan.plugins && plan.plugins.length > 0) {
                 emit(emitter, 'info', 'plugins', `🔌 安装插件（${plan.plugins.length}个）...`);
                 summary.stages.plugins = await installSelectedPlugins(
-                    plan.sourcePath, plan.plugins, emitter);
+                    sourceRoot, plan.plugins, emitter);
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
@@ -106,7 +117,7 @@ function executeMigration(plan) {
                 emit(emitter, 'info', 'vectors', `📊 迁移向量索引...`);
                 const junPlugins = await listJuniorPlugins();
                 summary.stages.vectors = await migrateVectors(
-                    plan.sourcePath, scan.vectors, junPlugins, emitter);
+                    sourceRoot, scan.vectors, junPlugins, emitter);
             }
             if (cancelled(job)) return aborted(emitter, summary);
 
@@ -114,7 +125,7 @@ function executeMigration(plan) {
             if (plan.configMerge && (plan.configMerge.add || plan.configMerge.conflicts)) {
                 emit(emitter, 'info', 'config', `⚙️ 合并 config.env...`);
                 summary.stages.config = await applyMerge(
-                    plan.sourcePath, plan.configMerge, emitter);
+                    sourceRoot, plan.configMerge, emitter);
             }
 
             summary.finishedAt = new Date().toISOString();
@@ -130,6 +141,10 @@ function executeMigration(plan) {
             emit(emitter, 'error', 'fatal', e.message);
             emitter.emit('error', e);
         } finally {
+            // 清理临时解压目录（dir 源 cleanup 是 no-op）
+            if (resolved) {
+                try { await resolved.cleanup(); } catch {}
+            }
             lock.release(job.jobId);
         }
     })();
@@ -199,4 +214,9 @@ module.exports = {
     executeMigration,
     readHistory,
     lock,
+    // 新增（VCPBackUp 适配 + WebDAV + 定期备份）
+    source: require('./source'),
+    webdav: require('./webdav'),
+    exporter: require('./export'),
+    scheduler: require('./schedule'),
 };

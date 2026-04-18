@@ -1235,6 +1235,15 @@ async function initialize() {
 
     // 初始化通用任务调度器
     taskScheduler.initialize(pluginManager, webSocketServer, DEBUG_MODE);
+
+    // 初始化备份定期调度（VCPBackUp 兼容）
+    try {
+        const backupScheduler = require('./modules/migration/schedule');
+        const r = await backupScheduler.init();
+        if (r.scheduled && DEBUG_MODE) console.log(`[backup-schedule] ${r.cron}, next ${r.nextInvocation}`);
+    } catch (e) {
+        console.warn('[backup-schedule] init failed:', e.message);
+    }
 }
 
 // Store the server instance globally so it can be accessed by gracefulShutdown
