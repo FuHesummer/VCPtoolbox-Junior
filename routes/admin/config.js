@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
+const dotenv = require('dotenv');
 
 module.exports = function(options) {
     const router = express.Router();
@@ -115,7 +116,33 @@ module.exports = function(options) {
         }
         try {
             const configPath = path.join(process.env.VCP_ROOT || path.join(__dirname, '..', '..'), 'config.env');
+
+            // 读取旧 config.env 的 key 集合（用于 diff 清理 process.env）
+            // 没有这一步，删除 Agent / 删除任何 env 条目在运行期都不会生效 —
+            // AgentDream 等插件会从残留的 process.env 恢复被删的动态 key（DREAM_AGENT_*）
+            let oldKeys = new Set();
+            try {
+                const oldContent = await fs.readFile(configPath, 'utf-8');
+                oldKeys = new Set(Object.keys(dotenv.parse(oldContent)));
+            } catch (_) { /* 首次保存，无旧文件 */ }
+
+            const newEnv = dotenv.parse(content);
+            const newKeys = new Set(Object.keys(newEnv));
+
             await fs.writeFile(configPath, content, 'utf-8');
+
+            // 同步 process.env：
+            //   1) 清理被删除的 key（旧里有、新里没有的）
+            //   2) 写入新 content 所有 key（覆盖旧值）
+            let removed = 0;
+            for (const k of oldKeys) {
+                if (!newKeys.has(k)) { delete process.env[k]; removed++; }
+            }
+            for (const [k, v] of Object.entries(newEnv)) {
+                process.env[k] = v;
+            }
+            console.log(`[AdminPanelRoutes] config.env saved: ${newKeys.size} keys applied, ${removed} removed from process.env`);
+
             await pluginManager.loadPlugins();
             res.json({ message: '主配置已成功保存并已重新加载。' });
         } catch (error) {

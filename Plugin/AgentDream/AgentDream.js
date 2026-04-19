@@ -191,7 +191,11 @@ function loadDreamConfig(pluginConfig) {
         }
 
         const systemPromptTemplate = envConfig[`DREAM_AGENT_${baseName}_SYSTEM_PROMPT`] || '';
-        let finalSystemPrompt = systemPromptTemplate.replace(/\{\{MaidName\}\}/g, chineseName);
+        // 🌙 兜底：SYSTEM_PROMPT 留空时默认展开为 {{agent:<chineseName>}}
+        // 空 system prompt 会让 gemini 进入思考模式只返 reasoning_content，导致 content=null 触发 "梦境回复无效"
+        // 用 agent 占位符作为默认人格锚点，chatCompletionHandler 会用 agent_map.json 注册的 prompt 展开
+        const effectiveTemplate = systemPromptTemplate.trim() || `{{agent:${chineseName}}}`;
+        let finalSystemPrompt = effectiveTemplate.replace(/\{\{MaidName\}\}/g, chineseName);
 
         DREAM_AGENTS[chineseName] = {
             id: modelId,
@@ -1179,9 +1183,13 @@ pluginAdminRouter.post('/trigger-dream', async (req, res) => {
         }
         // 异步触发（不阻塞响应），做梦通常耗时 30s~2min
         triggerDream(agentName).then(result => {
-            console.log(`[AgentDream:AdminAPI] Manual dream for ${agentName}:`, result.status);
+            if (result && result.status === 'error') {
+                console.error(`[AgentDream:AdminAPI] Manual dream for ${agentName} failed: ${result.error || '(no detail)'}`);
+            } else {
+                console.log(`[AgentDream:AdminAPI] Manual dream for ${agentName}: ${result?.status}`);
+            }
         }).catch(err => {
-            console.error(`[AgentDream:AdminAPI] Manual dream error for ${agentName}:`, err.message);
+            console.error(`[AgentDream:AdminAPI] Manual dream exception for ${agentName}:`, err && err.message ? err.message : err);
         });
         res.json({ success: true, message: `已触发 ${agentName} 做梦，请稍后刷新查看梦日志` });
     } catch (e) {
