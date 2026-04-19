@@ -275,7 +275,7 @@ const localModules = [
     'placeholderRegistry', // 占位符注册表
     'maintenance',     // 运维中心（spawn 维护脚本）
     'updateChecker',   // 后端+面板版本更新检测
-    'placeholders',    // 静态占位符值
+    // 'placeholders', // 🚫 代理到主进程 — 依赖 pluginManager 真实数据（静态占位符 / 工具描述 / 表情包 / SarPrompt 等）
     'toolListEditor',  // 工具列表编辑器
     'newapiMonitor',   // NewAPI 用量监控
 ];
@@ -342,7 +342,7 @@ const localAdminModules = {
     placeholderRegistry: require('./routes/admin/placeholderRegistry'),
     maintenance:       require('./routes/admin/maintenance'),
     updateChecker:     require('./routes/admin/updateChecker'),
-    placeholders:      require('./routes/admin/placeholders'),
+    // placeholders: 🚫 代理到主进程 — 需要真实 pluginManager 数据才能列出全部占位符
     toolListEditor:    require('./routes/admin/toolListEditor'),
     newapiMonitor:     require('./routes/admin/newapiMonitor'),
 };

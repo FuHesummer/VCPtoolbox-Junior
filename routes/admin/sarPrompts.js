@@ -4,13 +4,27 @@
 const express = require('express');
 const sarPromptManager = require('../../modules/sarPromptManager.js');
 
+// adminServer 独立进程 — 首次加载时确保 sarPromptManager 已初始化（读 sarprompt.json）
+let _initPromise = null;
+function ensureInitialized() {
+    if (!_initPromise) {
+        _initPromise = sarPromptManager.initialize(false).catch(e => {
+            console.error('[sarPrompts route] sarPromptManager.initialize failed:', e.message);
+            _initPromise = null;
+        });
+    }
+    return _initPromise;
+}
+
 module.exports = function (options) {
     const router = express.Router();
+    ensureInitialized();
 
     // GET /sar-prompts → 当前所有配对
     // 兼容前端格式：返回 { success, items: [{index, models, prompt}] }
-    router.get('/sar-prompts', (req, res) => {
+    router.get('/sar-prompts', async (req, res) => {
         try {
+            await ensureInitialized();
             const prompts = sarPromptManager.getAllPrompts();
             const items = prompts.map((g, i) => {
                 const numMatch = g.promptKey && g.promptKey.match(/\d+$/);

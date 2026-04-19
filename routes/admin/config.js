@@ -203,5 +203,46 @@ module.exports = function(options) {
         }
     });
 
+    // --- 获取上游 API 可用模型列表（NewAPI / OpenAI 兼容） ---
+    router.get('/config/models', async (req, res) => {
+        try {
+            const apiUrl = process.env.API_URL;
+            const apiKey = process.env.API_Key;
+            if (!apiUrl || !apiKey) {
+                return res.json({ models: [], error: 'API_URL or API_Key not configured' });
+            }
+
+            const { default: fetch } = await import('node-fetch');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+
+            try {
+                const response = await fetch(`${apiUrl}/v1/models`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` },
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+
+                if (!response.ok) {
+                    return res.json({ models: [], error: `Upstream API returned ${response.status}` });
+                }
+
+                const json = await response.json();
+                const models = (json.data || [])
+                    .map(m => m.id)
+                    .filter(Boolean)
+                    .sort((a, b) => a.localeCompare(b));
+
+                res.json({ models });
+            } catch (fetchError) {
+                clearTimeout(timeout);
+                throw fetchError;
+            }
+        } catch (error) {
+            console.error('[AdminPanelRoutes] Error fetching models from upstream API:', error.message);
+            res.json({ models: [], error: error.message });
+        }
+    });
+
     return router;
 };
