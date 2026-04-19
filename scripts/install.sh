@@ -476,7 +476,7 @@ action_update() {
     [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return
 
     local was_online=0
-    if [ "$PM2_STATUS" = "online" ]; then
+    if [ "$PM2_STATUS" = "online" ] || [ "$PM2_STATUS" = "unknown" ]; then
         was_online=1
         info "停止服务..."
         pm2 stop "$PM2_NAME" >/dev/null 2>&1 || true
@@ -519,6 +519,27 @@ action_update() {
             modules|routes|node_modules|AdminPanel|rust-vexus-lite|scripts|python|docs|build)
                 rm -rf "./$name"
                 cp -r "$item" "./$name"
+                ;;
+            # Plugin/ 核心插件增量同步：release 里有的 → 替换（保留运行时数据），本地多出的 → 不动
+            Plugin)
+                for _pd in "$item"/*/; do
+                    local _pn; _pn="$(basename "$_pd")"
+                    [ "$_pn" = "*" ] && continue
+                    # 备份运行时子目录（config.env / dream_logs / data / state）
+                    local _bak="/tmp/_plugin_bak_${_pn}"
+                    rm -rf "$_bak"
+                    for _keep in config.env dream_logs data state; do
+                        [ -e "./Plugin/$_pn/$_keep" ] && mkdir -p "$_bak" && cp -r "./Plugin/$_pn/$_keep" "$_bak/$_keep"
+                    done
+                    rm -rf "./Plugin/$_pn"
+                    cp -r "$_pd" "./Plugin/$_pn"
+                    # 还原运行时数据
+                    if [ -d "$_bak" ]; then
+                        cp -r "$_bak"/* "./Plugin/$_pn/" 2>/dev/null || true
+                        rm -rf "$_bak"
+                    fi
+                done
+                [ -f "$item/CLAUDE.md" ] && cp -f "$item/CLAUDE.md" "./Plugin/CLAUDE.md"
                 ;;
             # 根目录代码文件（server/admin/Plugin.js 等）
             server.js|adminServer.js|Plugin.js|maintain.js)
