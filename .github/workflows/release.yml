@@ -267,7 +267,7 @@ jobs:
             | Linux x64 | `vcp-junior-linux-x64.tar.gz` | 解压后 `chmod +x VCPtoolbox && ./VCPtoolbox` |
             | Linux ARM64 | `vcp-junior-linux-arm64.tar.gz` | 树莓派 / AWS Graviton / ARM 服务器 |
             | macOS ARM64 (Apple Silicon) | `vcp-junior-darwin-arm64.tar.gz` | M1/M2/M3/M4 |
-            | Docker | `ghcr.io` | linux/amd64，见下方 |
+            | Docker | `ghcr.io` | linux/amd64 + linux/arm64，见下方 |
 
             > 注：未提供 macOS x64（Intel Mac）产物 — GitHub Actions 已弃用 macos-13 runner。Intel Mac 用户可从源码构建（`git clone` + `npm run package:mac`）。
 
@@ -284,7 +284,7 @@ jobs:
             > **本体开箱即用 16 核心插件**（文件操作、日记系统、RAG 语义检索、占位符识别、
             > 表情包管理、图床、向量索引等），其余都通过商店按需扩展，保持包体积精简。
 
-            ## 🐳 Docker 部署（linux/amd64 原生高性能）
+            ## 🐳 Docker 部署（linux/amd64 + linux/arm64 原生多架构）
 
             ```bash
             docker pull ghcr.io/fuhesummer/vcptoolbox-junior:latest
@@ -309,11 +309,25 @@ jobs:
             artifacts/**/*
 
   # ================================================================
-  # Job 3: Docker 多架构镜像（amd64 + arm64）
+  # Job 3: Docker 多架构镜像构建（amd64 + arm64 原生 runner 并行）
+  # 策略：每个架构独立 runner 构建单架构镜像并推 :VER-<arch> tag
+  #       下一个 job (docker-manifest) 合并成多架构 manifest :VER + :latest
+  # 原因：QEMU 模拟 ARM 源码编译 native 模块（better-sqlite3/@node-rs/jieba/
+  #       hnswlib-node/@napi-rs/canvas）会跑 6+ 小时卡死
   # ================================================================
-  docker:
+  docker-build:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-22.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -361,7 +375,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version + tag strategy
+      - name: Extract version
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -370,27 +384,79 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/v}"
           fi
           echo "VERSION=$TAG" >> $GITHUB_OUTPUT
-          # Beta 测试期仍覆盖 :latest（宝宝决策：没发给用户前 latest 就是最新 beta）
-          # 正式版发布后可改为"仅正式版覆盖 latest"
-          echo "PUSH_LATEST=true" >> $GITHUB_OUTPUT
 
       - name: Lowercase owner
         id: owner
         run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-      # ⚠️ arm64 暂时禁用：QEMU 模拟 ARM + 从源码编译 native 模块
-      # (better-sqlite3 / @node-rs/jieba / hnswlib-node / @napi-rs/canvas)
-      # 会导致 docker job 跑 6+ 小时卡死。后续改用 ubuntu-22.04-arm 原生 runner 再启用。
-
-      - name: Build and push Docker image (amd64)
+      # 原生 runner 构建 — 不用 QEMU，两个架构并行，总耗时 ≈ max(amd64, arm64)
+      - name: Build and push Docker image (${{ matrix.arch }})
         uses: docker/build-push-action@v6
         with:
           context: main
           file: main/Dockerfile
           push: true
-          platforms: linux/amd64
-          tags: |
-            ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          tags: ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:${{ steps.version.outputs.VERSION }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  # ================================================================
+  # Job 4: 合并多架构 manifest — 让 `docker pull :latest` 自动选平台
+  # ================================================================
+  docker-manifest:
+    needs: docker-build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "VERSION=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Lowercase owner
+        id: owner
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      # 合并 :VER-amd64 + :VER-arm64 → 多架构 manifest :VER + :latest
+      # Beta 测试期 :latest 仍覆盖最新版（宝宝决策），正式发布后可改条件
+      - name: Create multi-arch manifest (:VER + :latest)
+        run: |
+          set -e
+          IMG="ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior"
+          VER="${{ steps.version.outputs.VERSION }}"
+
+          echo "::group::Creating :$VER manifest"
+          docker buildx imagetools create -t "$IMG:$VER" \
+            "$IMG:$VER-amd64" \
+            "$IMG:$VER-arm64"
+          echo "::endgroup::"
+
+          echo "::group::Creating :latest manifest"
+          docker buildx imagetools create -t "$IMG:latest" \
+            "$IMG:$VER-amd64" \
+            "$IMG:$VER-arm64"
+          echo "::endgroup::"
+
+          echo "::group::Inspect :$VER (verify amd64 + arm64 present)"
+          docker buildx imagetools inspect "$IMG:$VER"
+          echo "::endgroup::"
