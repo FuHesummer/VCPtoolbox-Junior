@@ -1112,15 +1112,30 @@ class PluginManager extends EventEmitter {
                     initialConfig.Key = process.env.Key;
                     initialConfig.PROJECT_BASE_PATH = this.projectBasePath;
 
+                    // --- 通用依赖注入（与 discoverAndLoadPlugins 保持对齐） ---
                     const dependencies = { vcpLogFunctions: this.getVCPLogFunctions() };
+                    dependencies.pluginManager = this;
+                    dependencies.knowledgeBaseManager = this.vectorDBManager;
+                    dependencies.vectorDBManager = this.vectorDBManager;
 
-                    // ContextBridge 通用依赖注入（manifest 声明 requiresContextBridge）
                     if (manifest.requiresContextBridge) {
                         const ragPluginModule = this.messagePreprocessors.get('RAGDiaryPlugin');
                         if (ragPluginModule && typeof ragPluginModule.getContextBridge === 'function') {
                             dependencies.contextBridge = ragPluginModule.getContextBridge();
                         } else {
                             console.warn(`[PluginManager] ${manifest.name} 声明 requiresContextBridge，但 RAGDiaryPlugin 不可用`);
+                        }
+                    }
+
+                    if (manifest.requiresEmbedding) {
+                        const ragPluginModule = this.messagePreprocessors.get('RAGDiaryPlugin');
+                        if (ragPluginModule && typeof ragPluginModule.getSingleEmbedding === 'function') {
+                            dependencies.getSingleEmbedding = ragPluginModule.getSingleEmbedding.bind(ragPluginModule);
+                            if (!dependencies.contextBridge && typeof ragPluginModule.getContextBridge === 'function') {
+                                dependencies.contextBridge = ragPluginModule.getContextBridge();
+                            }
+                        } else {
+                            console.warn(`[PluginManager] ${manifest.name} 声明 requiresEmbedding，但 RAGDiaryPlugin 不可用`);
                         }
                     }
 
@@ -1397,18 +1412,14 @@ class PluginManager extends EventEmitter {
 
                     const dependencies = { vcpLogFunctions: this.getVCPLogFunctions() };
 
-                    // --- 注入 KnowledgeBaseManager 共享实例 ---
-                    // 🔑 SEA 打包 + 磁盘模块分离场景：插件从磁盘 require 得到的是未初始化的第二实例，
-                    //    必须由 PluginManager 把 server.js 初始化好的实例统一注入给所有插件
+                    // --- 🔑 通用依赖注入（所有插件均可访问，无需按名硬编码） ---
+                    // SEA 打包场景：插件从磁盘 require 得到的是未初始化的第二实例，
+                    // 必须由 PluginManager 统一注入 server.js 初始化好的共享实例
+                    dependencies.pluginManager = this;
                     dependencies.knowledgeBaseManager = this.vectorDBManager;
+                    dependencies.vectorDBManager = this.vectorDBManager; // 历史别名，与 knowledgeBaseManager 同源
 
-                    // --- 注入 VectorDBManager（历史别名，RAGDiaryPlugin 继续使用） ---
-                    if (manifest.name === 'RAGDiaryPlugin') {
-                        dependencies.vectorDBManager = this.vectorDBManager;
-                    }
-
-                    // --- 🌟 ContextBridge 通用依赖注入 ---
-                    // 任何在 manifest 中声明 "requiresContextBridge": true 的插件都能获得 RAG 上下文向量接口
+                    // --- ContextBridge：manifest 声明制（requiresContextBridge: true） ---
                     if (manifest.requiresContextBridge) {
                         const ragPluginModule = this.messagePreprocessors.get('RAGDiaryPlugin');
                         if (ragPluginModule && typeof ragPluginModule.getContextBridge === 'function') {
@@ -1419,19 +1430,19 @@ class PluginManager extends EventEmitter {
                         }
                     }
 
-                    // --- LightMemo 特殊依赖注入（向后兼容 + ContextBridge） ---
-                    if (manifest.name === 'LightMemo') {
+                    // --- getSingleEmbedding：manifest 声明制（requiresEmbedding: true） ---
+                    // 插件间依赖通过声明获取，不再按插件名硬编码
+                    if (manifest.requiresEmbedding) {
                         const ragPluginModule = this.messagePreprocessors.get('RAGDiaryPlugin');
-                        if (ragPluginModule && ragPluginModule.vectorDBManager && typeof ragPluginModule.getSingleEmbedding === 'function') {
-                            dependencies.vectorDBManager = ragPluginModule.vectorDBManager;
+                        if (ragPluginModule && typeof ragPluginModule.getSingleEmbedding === 'function') {
                             dependencies.getSingleEmbedding = ragPluginModule.getSingleEmbedding.bind(ragPluginModule);
-                            // 同时注入 ContextBridge（如果 LightMemo 未在 manifest 中声明，也主动注入）
+                            // 同时注入 ContextBridge（嵌入能力通常需要上下文桥接）
                             if (!dependencies.contextBridge && typeof ragPluginModule.getContextBridge === 'function') {
                                 dependencies.contextBridge = ragPluginModule.getContextBridge();
                             }
-                            if (this.debugMode) console.log(`[PluginManager] Injected VectorDBManager, getSingleEmbedding and ContextBridge into LightMemo.`);
+                            if (this.debugMode) console.log(`[PluginManager] 🧬 Injected getSingleEmbedding into ${manifest.name}.`);
                         } else {
-                            console.error(`[PluginManager] Critical dependency failure: RAGDiaryPlugin or its components not available for LightMemo injection.`);
+                            console.error(`[PluginManager] Plugin "${manifest.name}" requires Embedding, but RAGDiaryPlugin is not available.`);
                         }
                     }
                     // --- 注入结束 ---

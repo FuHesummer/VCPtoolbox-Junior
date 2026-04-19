@@ -12,6 +12,8 @@
   "communication": {
     "protocol": "direct"
   },
+  "requiresContextBridge": true,
+  "requiresEmbedding": true,
   "configSchema": {
     "EXCLUDED_FOLDERS": {
       "type": "string",
