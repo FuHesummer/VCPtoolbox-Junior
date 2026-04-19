@@ -1397,7 +1397,12 @@ class PluginManager extends EventEmitter {
 
                     const dependencies = { vcpLogFunctions: this.getVCPLogFunctions() };
 
-                    // --- 注入 VectorDBManager ---
+                    // --- 注入 KnowledgeBaseManager 共享实例 ---
+                    // 🔑 SEA 打包 + 磁盘模块分离场景：插件从磁盘 require 得到的是未初始化的第二实例，
+                    //    必须由 PluginManager 把 server.js 初始化好的实例统一注入给所有插件
+                    dependencies.knowledgeBaseManager = this.vectorDBManager;
+
+                    // --- 注入 VectorDBManager（历史别名，RAGDiaryPlugin 继续使用） ---
                     if (manifest.name === 'RAGDiaryPlugin') {
                         dependencies.vectorDBManager = this.vectorDBManager;
                     }

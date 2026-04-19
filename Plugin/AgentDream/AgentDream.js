@@ -58,10 +58,17 @@ function initialize(config, dependencies) {
     VCP_API_TARGET_URL = `http://127.0.0.1:${VCP_SERVER_PORT}/v1`;
 
     // 加载 KnowledgeBaseManager
+    // 🔑 优先使用 PluginManager 注入的共享实例；SEA 打包场景下磁盘 require 会拿到
+    //    一个未初始化的第二实例（bundle 和磁盘是独立模块缓存），必须走注入路径
     try {
-        knowledgeBaseManager = require('../../modules/KnowledgeBaseManager');
-        if (DEBUG_MODE) console.error('[AgentDream] KnowledgeBaseManager loaded.');
-        
+        if (dependencies && dependencies.knowledgeBaseManager) {
+            knowledgeBaseManager = dependencies.knowledgeBaseManager;
+            if (DEBUG_MODE) console.error('[AgentDream] KnowledgeBaseManager injected by PluginManager.');
+        } else {
+            knowledgeBaseManager = require('../../modules/KnowledgeBaseManager');
+            console.warn('[AgentDream] ⚠️ KnowledgeBaseManager fallback to disk require — SEA 场景下会失败。请检查 PluginManager 是否注入 dependencies.knowledgeBaseManager');
+        }
+
         const DreamWaveEngine = require('./DreamWaveEngine');
         dreamWaveEngine = new DreamWaveEngine(knowledgeBaseManager);
         if (DEBUG_MODE) console.error('[AgentDream] DreamWaveEngine loaded.');
