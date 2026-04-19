@@ -1,17 +1,44 @@
 {
-  "Nova": "Nova/Nova.txt",
-  "Coco": "Coco/ThemeMaidCoco.txt",
-  "Hornet": "Hornet/Hornet.txt",
-  "Aemeath": "Aemeath/Aemeath.txt",
-  "DreamNova": "DreamNova/DreamNova.txt",
+  "Aemeath": {
+    "prompt": "Aemeath/Aemeath.txt",
+    "notebooks": {
+      "Aemeath/diary": "diary",
+      "Aemeath/knowledge": "knowledge"
+    }
+  },
+  "Coco": {
+    "prompt": "Coco/ThemeMaidCoco.txt",
+    "notebooks": {
+      "Coco/diary": "diary",
+      "Coco/knowledge": "knowledge"
+    }
+  },
+  "DreamNova": {
+    "prompt": "DreamNova/DreamNova.txt",
+    "notebooks": {
+      "DreamNova/diary": "diary",
+      "DreamNova/knowledge": "knowledge"
+    }
+  },
+  "Hornet": {
+    "prompt": "Hornet/Hornet.txt",
+    "notebooks": {
+      "Hornet/diary": "diary",
+      "Hornet/knowledge": "knowledge"
+    }
+  },
   "Metis": {
     "prompt": "Metis/Metis.txt",
     "notebooks": {
-      "前思维簇": "thinking/前思维簇",
-      "逻辑推理簇": "thinking/逻辑推理簇",
-      "反思簇": "thinking/反思簇",
-      "结果辩证簇": "thinking/结果辩证簇",
-      "陈词总结梳理簇": "thinking/陈词总结梳理簇"
+      "Metis/diary": "diary",
+      "Metis/knowledge": "knowledge"
+    }
+  },
+  "Nova": {
+    "prompt": "Nova/Nova.txt",
+    "notebooks": {
+      "Nova/diary": "diary",
+      "Nova/knowledge": "knowledge"
     }
   }
 }

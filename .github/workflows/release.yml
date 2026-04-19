@@ -378,16 +378,17 @@ jobs:
         id: owner
         run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-      - name: Set up QEMU (ARM cross-compile)
-        uses: docker/setup-qemu-action@v3
+      # ⚠️ arm64 暂时禁用：QEMU 模拟 ARM + 从源码编译 native 模块
+      # (better-sqlite3 / @node-rs/jieba / hnswlib-node / @napi-rs/canvas)
+      # 会导致 docker job 跑 6+ 小时卡死。后续改用 ubuntu-22.04-arm 原生 runner 再启用。
 
-      - name: Build and push Docker image (amd64 + arm64)
+      - name: Build and push Docker image (amd64)
         uses: docker/build-push-action@v6
         with:
           context: main
           file: main/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:${{ steps.version.outputs.VERSION }}
             ghcr.io/${{ steps.owner.outputs.OWNER }}/vcptoolbox-junior:latest

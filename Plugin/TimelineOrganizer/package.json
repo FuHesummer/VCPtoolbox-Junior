@@ -1,7 +1,0 @@
-{
-  "name": "vcp-timeline-organizer",
-  "version": "1.0.0",
-  "description": "VCPtoolbox-Junior 时间线整理器插件",
-  "main": "TimelineOrganizer.js",
-  "private": true
-}

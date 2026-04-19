@@ -18,7 +18,7 @@ const JUNIOR_PLUGIN_DIR = path.join(PROJECT_ROOT, 'Plugin');
 const BUILTIN_CORE = new Set([
     'RAGDiaryPlugin', 'DailyNote', 'DailyNoteWrite', 'DailyNoteManager',
     'DailyNotePanel', 'LightMemo', 'ContextFoldingV2', 'UserAuth', 'VCPLog',
-    'TimelineOrganizer', 'DailyNoteEditor', 'SemanticGroupEditor', 'ThoughtClusterManager',
+    'AgentDream', 'DailyNoteEditor', 'SemanticGroupEditor', 'ThoughtClusterManager',
     'EmojiListGenerator', 'ImageServer', 'FileOperator',
 ]);
 

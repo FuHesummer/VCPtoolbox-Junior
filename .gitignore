@@ -272,15 +272,15 @@ Plugin/*/
 !Plugin/RAGDiaryPlugin/
 !Plugin/SemanticGroupEditor/
 !Plugin/ThoughtClusterManager/
-!Plugin/TimelineOrganizer/
+!Plugin/AgentDream/
 !Plugin/UserAuth/
 !Plugin/VCPLog/
 !Plugin/CLAUDE.md
 
-# TimelineOrganizer 运行时编辑态 JSON（用户生成，不入库）
-Plugin/TimelineOrganizer/data/*_timeline.json
-# TimelineOrganizer 运行时生成的 TVStxt Timeline 文件（首次启动 bootstrap 自动重建）
-TVStxt/Timeline*.txt
+# AgentDream 运行时生成的梦日志（用户数据，不入库）
+Plugin/AgentDream/dream_logs/
+# AgentDream 插件级 config.env（用户按 config.env.example 创建，不入库）
+Plugin/AgentDream/config.env
 # EmojiListGenerator 运行时生成的表情包清单（启动时自动重建，不入库）
 Plugin/EmojiListGenerator/generated_lists/
 

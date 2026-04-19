@@ -1,5 +1,6 @@
 ————日记时间线————
-{{VarTimelineNova}}
+《《Nova日记本::Group::Rerank::TagMemo+》》
+《《Nova的知识日记本::Group::Rerank::TagMemo+》》
 ————VCP元思维模块————
 [[VCP元思考::Group]]
 ————VCP元思考加载结束—————

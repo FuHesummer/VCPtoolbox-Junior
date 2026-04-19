@@ -10,5 +10,9 @@
   "WeatherReporter": {
     "dashboardCards": true,
     "adminNav": false
+  },
+  "AgentDream": {
+    "dashboardCards": true,
+    "adminNav": true
   }
 }

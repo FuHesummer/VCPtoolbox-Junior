@@ -266,7 +266,8 @@ class AgentManager {
 
             for (const entry of entries) {
                 const entryPath = path.join(dirPath, entry.name);
-                const entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+                // 统一用正斜杠（跨平台一致，与 agent_map.json 中的路径格式对齐）
+                const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
 
                 // 跳过 Agent 数据子目录（diary/knowledge/thinking）
                 if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name.toLowerCase())) {

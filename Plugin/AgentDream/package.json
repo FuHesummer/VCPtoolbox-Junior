@@ -1,0 +1,9 @@
+{
+  "name": "vcptoolbox-plugin-agentdream",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.5.0",
+    "uuid": "^9.0.0"
+  }
+}
