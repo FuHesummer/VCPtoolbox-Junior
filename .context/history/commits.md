@@ -44,3 +44,6 @@
 | 2026-04-19 | 019da1ef | b5793cd | fix(platform): SEA Windows 弹空白终端修复 | 1 | 1 | high |
 | 2026-04-19 | 019da1ef | 2198feb | chore(release): bump version → v2.0.0-beta.13 | 1 | 0 | low |
 | 2026-04-19 | 019da1ef | df82cf4 | fix(build): esbuild stub @aws-sdk/* 避开 unzipper S3 可选依赖 | 1 | 1 | high |
+| 2026-04-19 | 019da4c2 | e842aad | feat(plugin): AgentDream replace TimelineOrganizer + manual dream + global config | 4 | 1 | high |
+| 2026-04-19 | 019da4c2 | 531b60d | fix(install): action_update sync Plugin/ core plugins + pm2 unknown auto restart | 1 | 1 | low |
+| 2026-04-19 | 019da4c2 | adcb98d | fix(dream): loadDreamConfig use PluginManager injected config object | 1 | 1 | med |
