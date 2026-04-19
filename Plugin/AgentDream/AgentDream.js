@@ -82,8 +82,8 @@ function initialize(config, dependencies) {
         console.error('[AgentDream] Warning: pushVcpInfo dependency injection failed.');
     }
 
-    // 加载梦配置
-    loadDreamConfig();
+    // 加载梦配置（优先用 PluginManager 通过 configSchema 注入的 config 对象）
+    loadDreamConfig(config);
 
     // 确保 dream_logs 目录存在
     const dreamLogsDir = path.join(__dirname, 'dream_logs');
@@ -117,21 +117,26 @@ function shutdown() {
 
 /**
  * 加载梦系统配置和 Agent 定义
- * [Junior 协议] 核心插件配置（DREAM_*）统一在全局 config.env 中维护（与 FileOperator 同协议）
- *             优先从 process.env 读取；若未找到任何 DREAM_AGENT_* 条目，则降级到插件目录 config.env（兼容旧版）。
+ * [Junior 协议] 核心插件配置统一在全局 config.env 维护。
+ *   PluginManager 通过 manifest.configSchema 从 process.env 提取 DREAM_* 传入 config 对象；
+ *   DREAM_AGENT_<NAME>_* 等动态 key 不在 configSchema 里，需要从 process.env 补充读取。
  */
-function loadDreamConfig() {
-    // 1) 优先从 process.env 读（全局 config.env 已由 dotenv 加载到 process.env）
+function loadDreamConfig(pluginConfig) {
+    // 1) 从 PluginManager 注入的 config 读 configSchema 声明的基础字段
     const envConfig = {};
-    const hasGlobalDreamConfig = Object.keys(process.env).some(k => k.startsWith('DREAM_'));
-
-    if (hasGlobalDreamConfig) {
-        for (const k of Object.keys(process.env)) {
-            if (k.startsWith('DREAM_')) envConfig[k] = process.env[k];
+    if (pluginConfig) {
+        for (const k of Object.keys(pluginConfig)) {
+            if (k.startsWith('DREAM_')) envConfig[k] = String(pluginConfig[k]);
         }
-        if (DEBUG_MODE) console.error('[AgentDream] 从全局 config.env (process.env) 加载 DREAM_* 配置');
-    } else {
-        // 2) 降级：插件目录 config.env（兼容旧版用户）
+    }
+
+    // 2) 补充：DREAM_AGENT_<NAME>_* 等动态 key 不在 configSchema，从 process.env 读
+    for (const k of Object.keys(process.env)) {
+        if (k.startsWith('DREAM_') && !envConfig[k]) envConfig[k] = process.env[k];
+    }
+
+    // 3) 如果还是空，降级到插件目录 config.env（兼容旧版用户）
+    if (!Object.keys(envConfig).some(k => k.startsWith('DREAM_'))) {
         const configEnvPath = path.join(__dirname, 'config.env');
         if (fs.existsSync(configEnvPath)) {
             try {
@@ -143,7 +148,7 @@ function loadDreamConfig() {
                 console.error(`[AgentDream] Error parsing plugin config.env: ${e.message}`);
             }
         } else {
-            console.warn('[AgentDream] ⚠️ 全局 config.env 无 DREAM_* 配置，且插件目录 config.env 不存在，梦系统休眠。参考 config.env.example 的 [梦系统插件] 区块。');
+            console.warn('[AgentDream] ⚠️ 无 DREAM_* 配置。请在全局 config.env 添加梦系统配置段（参考 config.env.example）');
             return;
         }
     }
