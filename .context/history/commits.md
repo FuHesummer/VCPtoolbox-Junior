@@ -48,3 +48,4 @@
 | 2026-04-19 | 019da4c2 | 531b60d | fix(install): action_update sync Plugin/ core plugins + pm2 unknown auto restart | 1 | 1 | low |
 | 2026-04-19 | 019da4c2 | adcb98d | fix(dream): loadDreamConfig use PluginManager injected config object | 1 | 1 | med |
 | 2026-04-19 | 019da53b | d147c63 | ✨ feat(admin): 全局配置 V2 后端支持 + adminServer 占位符代理修复 + Sar 预设兜底 | 4 | 2 | high |
+| 2026-04-20 | f3208e24 | a2b206f | 📱 feat(panel): AdminPanel 移动端响应式适配 + python3 兼容修复 | 6 | 0 | med |
