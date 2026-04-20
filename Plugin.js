@@ -43,7 +43,9 @@ function spawnShellCommand(command, opts = {}) {
             windowsVerbatimArguments: true,
         });
     }
-    return spawn(command, { ...opts, shell: true, windowsHide: true });
+    // Linux/macOS: manifest 里写 "python xxx.py" 但系统只有 python3
+    const cmd = command.startsWith('python ') ? 'python3' + command.slice(6) : command;
+    return spawn(cmd, { ...opts, shell: true, windowsHide: true });
 }
 const chokidar = require('chokidar');
 const { getAuthCode } = require('./modules/captchaDecoder'); // 导入统一的解码函数
@@ -448,7 +450,7 @@ class PluginManager extends EventEmitter {
         if (this.plugins.has('SciCalculator')) {
             console.log('[PluginManager] SciCalculator found. Starting pre-warming of Python scientific libraries in the background.');
             try {
-                const command = 'python';
+                const command = process.platform === 'win32' ? 'python' : 'python3';
                 const args = ['-c', 'import sympy, scipy.stats, scipy.integrate, numpy'];
                 const prewarmProcess = spawn(command, args, {
                     // 移除 shell: true
